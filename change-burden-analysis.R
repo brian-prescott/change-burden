@@ -238,7 +238,7 @@ sumStat_table <- list(mean, sd, median, min, max) %>%
                table <- sumS_df %>%
                  dplyr::select(-c(ends_with(".y"), hispaniclatino_group, birthYear, payment, income_hh, 
                                   year, date, tran, diary_day, pi, merch, highest_education, payee,
-                                  marital_status, used_cash, banked, in_person, merge_year, uasid)) %>%
+                                  marital_status, used_cash, banked, in_person, uasid)) %>%
                  mutate(unbanked = as.numeric(bnk_acnt_adopt == 0)) %>%
                  dplyr::select(-bnk_acnt_adopt) %>%
                  summarise_all(.tbl = ., 
