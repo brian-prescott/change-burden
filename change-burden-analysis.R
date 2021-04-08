@@ -10,7 +10,9 @@
 
 # Notes: If this is your initial use of the code (i.e. if initial_run == TRUE), then be warned that the 
 # optimization routines take approximately 10 hours combined to run. Outside of that, the window containing the 
-# script should be extended to the edge of the dashed lines for optimal readibility.
+# script should be extended to the edge of the dashed lines for optimal readibility. It should be noted that I the
+# uasid variable reported is not actually the "uasid" variable provided by USC but rather is the "id" variable 
+# created by the Atlanta Fed. The variable was simply renamed for the purposes of the script.
 
 #=================================================================================================================
                                                   # LIBRARIES #
@@ -168,7 +170,8 @@ factor2numeric <- function(x) return(as.numeric(as.character(x)))
                                                   # DATA IMPORT #
 #=================================================================================================================
 
-tran_df <- read_rds("cash_transaction_df.rds")
+tran_df <- read_rds("cash_transactions_df.rds") %>%
+  dplyr::rename(uasid = id)
 
 #=================================================================================================================
                                                 # DESCRIPTIVE ANALYSIS #
