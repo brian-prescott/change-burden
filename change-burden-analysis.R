@@ -3,6 +3,7 @@
 #=================================================================================================================
 
 # Written by: Brian Prescott
+# Last edited: 2021-05-06
 
 # Purpose: This script generates all of the figures and tables, solves the optimal currency denomination problem
 # and conducts the counterfactual policy simulation for the paper "The Burden of Change and the Penny Policy 
@@ -18,7 +19,7 @@
 #=================================================================================================================
                                                   # LIBRARIES #
 #=================================================================================================================
-
+ 
 library(tidyverse)
 library(haven)
 library(lpSolve)
@@ -28,17 +29,19 @@ library(data.table)
 library(grDevices)
 library(graphics)
 library(xtable)
+library(boot)
 
 #=================================================================================================================
                                                   # PARAMETERS #
 #=================================================================================================================
 
-directory <- ... # insert the path to your datasets here 
+directory <-  "a:/papers/burden-cash/" # insert the path to your datasets here 
 setwd(directory)
 
 set.seed(10)
 
 initial_run <- FALSE
+run_stylized <- FALSE
 
 last_run <- "2021-03-22"
 
@@ -68,9 +71,11 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
   }
 
  if (numPlots==1) {
+   
     print(plots[[1]])
 
   } else {
+    
     # Set up the page
     grid.newpage()
     pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
@@ -279,9 +284,13 @@ sumStat_table %>%
 #=================================================================================================================
 
 # Here we run the simple exercise of evaluating the burden at each dollar value between [0.01, 1]
-stylized_exercise_1 <- calc_optimal_tokens(amounts_list = as.list(seq(0.01, 1, 0.01)),
-                                           using_tokens = c(0.01, 0.05, 0.10, 0.25, 0.50,
-                                                            1, 2, 5, 10, 20, 50, 100))
+if (run_stylized == TRUE) {
+  
+  stylized_exercise_1 <- calc_optimal_tokens(amounts_list = as.list(seq(0.01, 1, 0.01)),
+                                             using_tokens = c(0.01, 0.05, 0.10, 0.25, 0.50,
+                                                              1, 2, 5, 10, 20, 50, 100))
+  
+}
 
 # Solving the model if we haven't already solved it
 if (initial_run == TRUE) {
@@ -290,7 +299,7 @@ if (initial_run == TRUE) {
   
   optimal_tokens_w_2note <- calc_optimal_tokens(amounts_list = amnt_list,
                                                 using_tokens = c(0.01, 0.05, 0.10, 0.25, 0.50,
-                                                                 1, 2, 5, 10, 20, 50, 100)) 
+                                                                 1, 2, 5, 10, 20, 50, 100))
   
   optimal_tokens_wo_2note <- calc_optimal_tokens(amounts_list = amnt_list,
                                                  using_tokens = c(0.01, 0.05, 0.10, 0.25, 0.50,
@@ -315,9 +324,12 @@ if (initial_run == TRUE) {
                             # COUNTERFACTUAL SIMULATION: ELIMINATION OF THE PENNY #
 #=================================================================================================================
 
-stylized_exercise_1.counter <- calc_optimal_tokens(amounts_list = as.list(seq(0.05, 1, 0.05)),
-                                                   using_tokens = c(0.05, 0.10, 0.25, 0.50,
-                                                                    1, 2, 5, 10, 20, 50, 100))
+if (run_stylized == TRUE) {
+  stylized_exercise_1.counter <- calc_optimal_tokens(amounts_list = as.list(seq(0.05, 1, 0.05)),
+                                                     using_tokens = c(0.05, 0.10, 0.25, 0.50,
+                                                                      1, 2, 5, 10, 20, 50, 100))
+  
+}
 
 counterfactual_tran_df <- tran_df %>%
   mutate_at(.vars = vars(amnt),
@@ -373,6 +385,8 @@ postCounter_df <- counterfactual_optimal_tokens_df %>%
                                    "A person", 
                                    "Retail store or online retailer", 
                                    "Business that primarily sells services")))
+
+cat("\014") # This line sends CTRL+L to the machine and will clear the console
 
 #=================================================================================================================
 # Expected number of tokens (coins and notes)
@@ -446,6 +460,115 @@ c(mean, sd, median, p25, p75, p95, min, max) %>%
     output <- h(subset(postCounter_df, alpha  > 100)$n_tokens_counter, na.rm = TRUE)
     
   })
+
+#=================================================================================================================
+                                              # HYPOTHESIS TESTING #
+#=================================================================================================================
+
+set.seed(10) # This was my favorite number when I played baseball
+
+# Turning the hyp testing code into a function
+burden_delta_hypTest <- function(df) {
+  
+  out <- df %>%
+    summarize(mean_current = mean(n_tokens, na.rm = TRUE),
+              mean_counter = mean(n_tokens_counter, na.rm = TRUE),
+              se = sqrt(var(n_tokens_counter) + var(n_tokens) - 
+                        2 * cov(n_tokens_counter, n_tokens)) / sqrt(n())) %>%
+    mutate(Delta = mean_counter - mean_current, 
+           ci_lower = Delta - 2.576 * se,
+           ci_upper = Delta + 2.576 * se, 
+           interval = str_c("[", round(ci_lower, 2), ", ", round(ci_upper, 2), "]")) %>%
+    dplyr::select(mean_current, mean_counter, Delta, se, interval) 
+  
+  return(out)
+  
+}
+
+hyp_tests <- c("All coins and notes", "No $2 note") %>%
+  as.list() %>%
+  purrr::map(.f = function(which_economy) {
+    
+    using_data <- postCounter_df %>%
+      subset(has_2note == which_economy) %>%
+          mutate(economy = which_economy)
+    
+    all_calc <- using_data %>%
+      burden_delta_hypTest(df = .) %>%
+          mutate(economy = which_economy, 
+                 var = "all")
+
+    lt100_calc <- subset(using_data, alpha >= 0.01 & alpha <= 100) %>%
+      burden_delta_hypTest(df = .) %>%
+          mutate(economy = which_economy, 
+                 var = "<= 100")
+    
+    gt100_calc <- subset(using_data, alpha > 100) %>%
+      burden_delta_hypTest(df = .) %>%
+          mutate(economy = which_economy, 
+                 var = "> 100")
+    
+    edu_calc <- using_data$education_ %>% 
+      unique() %>% 
+      na.omit() %>% 
+      str_c() %>%
+      as.list() %>%
+      map(.f = function(e) {
+        
+        print(e)
+        
+        out <- using_data %>%
+          subset(education_ == e) %>%
+          burden_delta_hypTest(df = .) %>%
+          mutate(economy = which_economy, 
+                 var = e)
+    
+        return(out)
+        
+      })
+    
+    income_calc <- using_data$income_ %>% 
+      unique() %>% 
+      na.omit() %>% 
+      str_c() %>%
+      as.list() %>%
+      map(.f = function(i) {
+        
+        print(i)
+        
+        out <- using_data %>%
+          subset(income_ == i) %>%
+          burden_delta_hypTest(df = .) %>%
+          mutate(economy = which_economy, 
+                 var = i)
+    
+        return(out)
+        
+      })
+    
+    output <- all_calc %>%
+      bind_rows(., lt100_calc) %>%
+      bind_rows(., gt100_calc) %>%
+      bind_rows(., edu_calc) %>%
+      bind_rows(., income_calc)
+    
+    return(output)
+
+  }) 
+
+bind_rows(hyp_tests) %>%
+  subset(economy == "All coins and notes") %>%
+  dplyr::select(-economy) %>%
+  dplyr::select(var, everything()) %>%
+  xtable::xtable() %>%
+  print(include.rownames = FALSE)
+
+bind_rows(hyp_tests) %>%
+  subset(economy == "No $2 note") %>%
+  dplyr::select(-economy) %>%
+  dplyr::select(var, everything()) %>%
+  xtable::xtable() %>%
+  print(include.rownames = FALSE)
 
 
 #=================================================================================================================
@@ -729,7 +852,7 @@ counter_shares_figure_1 <- postCounter_df %>%
   scale_fill_manual("Burden:", 
                     values = c("color1" = "skyblue1", "color2" = "royalblue4"), 
                     labels = c("color1" = "Without pennies (counterfactual)", "color2" = "With pennies (current)")) +
-  scale_color_manual("Burden:", 
+  scale_color_manual("Burden:",  
                      values = c("color1" = "skyblue1", "color2" = "royalblue4"), 
                      labels = c("color1" = "Without pennies (counterfactual)", "color2" = "With pennies (current)")) +
   scale_alpha_manual("Burden:", 
@@ -911,3 +1034,52 @@ gridExtra::grid.arrange(deltaAlpha_hist_merch[[1]], deltaAlpha_hist_merch[[2]], 
 #          units = "in",
 #          res = output_res)
 # dev.off()
+
+#===============================================================================================================
+
+# Plotting the empirical cumulative distribution function and the theoretical log-normal distribution function
+# Doing this for the current and counterfactual cash burdens
+
+postCounter_df %>% 
+  ggplot(data = ., aes(x = n_tokens)) + 
+  stat_ecdf(geom = "point", color = "black", size = 3) + 
+  geom_line(data = plnorm(q = unique(na.omit(postCounter_df$n_tokens)), 
+                          meanlog = log(mean(postCounter_df$n_tokens, na.rm = TRUE)), 
+                          sdlog = log(sd(postCounter_df$n_tokens, na.rm = TRUE))) %>% 
+              data.frame(x = unique(na.omit(postCounter_df$n_tokens)), 
+                         y = .) %>% 
+              arrange(x), 
+            aes(x = x, y = y), 
+            size = 0.5) + 
+  scale_x_continuous("Cash burden", 
+                     breaks = seq(0, 65, 5)) +
+  scale_y_continuous("") +
+  ggtitle("Current economy") +
+  theme_bw() + 
+  theme(text = element_text(family = "serif"), 
+        plot.title = element_text(size = 15, hjust = 0.5), 
+        axis.text = element_text(size = 13, color = "black"), 
+        axis.title = element_text(size = 14, color = "black"), 
+        panel.grid.minor = element_blank())
+
+postCounter_df %>% 
+  ggplot(data = ., aes(x = n_tokens_counter)) + 
+  stat_ecdf(geom = "point", color = "black", size = 3) + 
+  geom_line(data = plnorm(q = unique(na.omit(postCounter_df$n_tokens_counter)), 
+                          meanlog = log(mean(postCounter_df$n_tokens_counter, na.rm = TRUE)), 
+                          sdlog = log(sd(postCounter_df$n_tokens_counter, na.rm = TRUE))) %>% 
+              data.frame(x = unique(na.omit(postCounter_df$n_tokens_counter)), 
+                         y = .) %>% 
+              arrange(x), 
+            aes(x = x, y = y), 
+            size = 0.5) + 
+  scale_x_continuous("Cash burden", 
+                     breaks = seq(0, 65, 5)) +
+  scale_y_continuous("") +
+  ggtitle("Counterfactual economy") +
+  theme_bw() + 
+  theme(text = element_text(family = "serif"), 
+        plot.title = element_text(size = 15, hjust = 0.5), 
+        axis.text = element_text(size = 13, color = "black"), 
+        axis.title = element_text(size = 14, color = "black"), 
+        panel.grid.minor = element_blank())
