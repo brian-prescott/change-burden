@@ -12,7 +12,7 @@
 # Notes: If this is your initial use of the code (i.e. if initial_run == TRUE), then be warned that the 
 # optimization routines take approximately 10 hours combined to run. I suggest using the already generated 
 # model solutions datasets provided on GitHub to review the results. Outside of that, the window containing the 
-# script should be extended to the edge of the dashed lines for optimal readibility. It should be noted that I the
+# script should be extended to the edge of the dashed lines for optimal readibility. It should be noted that the
 # uasid variable reported is not actually the "uasid" variable provided by USC but rather is the "id" variable 
 # created by the Atlanta Fed. The variable was simply renamed for the purposes of the script.
 
