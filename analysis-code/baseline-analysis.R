@@ -26,7 +26,6 @@ rm(list = ls())
 
 # THESE SHOULD BE CONSIDERED BEFORE EVERY RUN
 run_stylized <- TRUE
-last_run <- "2021-09-05"
 
 #===============================================================================
 # LIBRARIES #
