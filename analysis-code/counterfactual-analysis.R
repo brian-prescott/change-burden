@@ -25,7 +25,7 @@
 rm(list = ls())
 initial_run <- TRUE
 run_stylized <- TRUE
-last_run <- "2021-09-05"
+last_run <- "2021-09-07"
 
 #===============================================================================
 # LIBRARIES #
@@ -43,13 +43,18 @@ library(xtable)
 # PARAMETERS #
 #===============================================================================
 # insert the path to your datasets here
-directory <- str_c(
-  Sys.getenv("USERPROFILE"), 
-  "\\PrescottLibrary\\papers\\academic-papers\\burden-cash\\"
-)
-setwd(paste0(directory, "data\\"))
+# General directory for more robust exporting
+directory <- str_c(Sys.getenv("OLDPWD"), "/change-burden/")
+# Insert the path to the dataset here
+setwd(paste0(directory, "data/"))
 
 set.seed(1995)
+
+#===============================================================================
+                                  # DATA IMPORT #
+#===============================================================================
+tran_df <- read_rds("cash_transactions_df.rds") %>%
+  dplyr::rename(uasid = id)
 
 #===============================================================================
 # FUNCTIONS #
@@ -68,7 +73,7 @@ p95 <- function(X, na.rm)
 # This is the simple symmetric rounding policy.
 symmetric_rounding <- function(amount) {
   counterfactual_amount <- round(amount / 0.05) * 0.05
-  
+
   return(counterfactual_amount)
 }
 
@@ -82,7 +87,7 @@ asymmetric_rounding <- function(amount) {
   rounded_down_lower <- as.character(1:2)
   rounded_down_upper <- as.character(6:7)
   rounded_down <- c(rounded_down_lower, rounded_down_upper)
-  
+
   if (str_sub(amount, 4, 5) == "99") {
     counter_amount <- as.numeric(
       str_c(str_sub(amount, 1, 3), "95")
@@ -99,43 +104,131 @@ asymmetric_rounding <- function(amount) {
       )
     )
     counter_amount <- round(new_amount / 0.05) * 0.05
-    
+
   } else {
     counter_amount <- round(amount / 0.05) * 0.05
-    
+
   }
-  
+
   return(counter_amount)
 }
 
 #===============================================================================
+calc_optimal_tokens <- function(amounts_list, using_tokens, only_20note) {
+  compute_optimal_tokens <- function(a) {
+    amount <<- a #nolint
+    tokens <- using_tokens
+    n_tokens <- length(tokens)
+
+    theta_p <- tokens # theta_p refers to the notation used in the paper
+    if (only_20note == TRUE) {
+      theta_p[theta_p != 20] <- 0
+
+    }
+
+    f_obj <- rep(1, n_tokens * 2)
+    f_constraint <- c(
+      rep(1, n_tokens * 2), # row 1
+      theta_p, rep(0, n_tokens), # row 2
+      tokens, -tokens, # row 3
+      diag(n_tokens * 2) # rows 4 - 27
+    ) %>%
+      matrix(
+        data = .,
+        nrow = 3 + (n_tokens * 2),
+        byrow = TRUE
+      )
+
+    # The equality ensures that the payment and change equal the amount. The
+    # 24 >= ensure that no negative token quantities occur.
+    f_direction <- c(">=", ">=", "==", rep(">=", n_tokens * 2))
+    f_rhs <- c(1, amount, amount, rep(0, n_tokens * 2))
+
+    solve_optimal_tokens <- lpSolve::lp(
+      direction = "min",
+      objective.in = f_obj,
+      const.mat = f_constraint,
+      const.dir = f_direction,
+      const.rhs = f_rhs,
+      int.vec = 1:length(f_obj),
+      all.bin = FALSE
+    )
+
+    optimal_number_tokens <- round(solve_optimal_tokens$objval, digits = 0)
+
+    optimal_tokens_df <- optimal_number_tokens %>%
+      data.frame(
+        n_tokens = .,
+        a = amount
+      ) %>%
+      data.frame()
+
+    return(optimal_tokens_df)
+  }
+
+  optimal_tokens_calculations <- amounts_list %>%
+    purrr::map(
+      .x = .,
+      .f = compute_optimal_tokens
+    ) %>%
+    bind_rows()
+
+  return(optimal_tokens_calculations)
+}
+
+#===============================================================================
 counterfactual_sim <- function(rounding_policy) {
+
   if (rounding_policy == "symmetric") {
     counterfactual_tran_df <- tran_df %>%
       mutate_at(
         .vars = vars(amnt),
         .funs = symmetric_rounding
       )
-    
+
   } else if (rounding_policy == "asymmetric") {
+    counter_amnts <- tran_df$amnt %>%
+      as.list() %>%
+      purrr::map(
+        .x = .,
+        .f = asymmetric_rounding
+      ) %>%
+      unlist() %>%
+      tibble(amnt = .)
+
+
     counterfactual_tran_df <- tran_df %>%
-      mutate_at(
-        .vars = vars(amnt),
-        .funs = asymmetric_rounding
+      dplyr::select(-amnt) %>%
+      bind_cols(
+        x = .,
+        y = counter_amnts
       )
-    
+
   } else {
     stop(paste0(
       "This rounding policy is not supported. Please choose either",
       "'symmetric' or 'asymmetric'"
     ))
-    
+
   }
-  
+
   if (initial_run == TRUE) {
+      if (run_stylized == TRUE) {
+        stylized_exercise_2 <- calc_optimal_tokens(
+          amounts_list = as.list(seq(4.05, 5, 0.05)),
+          using_tokens = c(
+            0.05, 0.10, 0.25, 0.50,
+            1, 5, 10, 20, 50, 100
+          ),
+          only_20note = FALSE
+        )
+
+      }
+
     counterfactual_amnt_list <- as.list(counterfactual_tran_df$amnt)
-    
-    counter_optimal_tokens_baseline <- counterfactual_amnt_list %>% 
+    num_cores <- 6
+
+    counter_optimal_tokens_baseline <- counterfactual_amnt_list %>%
       parallel::mclapply(
         X = .,
         FUN = calc_optimal_tokens,
@@ -144,9 +237,10 @@ counterfactual_sim <- function(rounding_policy) {
         mc.cores = num_cores,
         mc.preschedule = TRUE,
         mc.cleanup = TRUE
-      )
-    
-    counter_optimal_tokens_only_20note <- counterfactual_amnt_list %>% 
+      ) %>%
+      bind_rows()
+
+    counter_optimal_tokens_only_20note <- counterfactual_amnt_list %>%
       parallel::mclapply(
         X = .,
         FUN = calc_optimal_tokens,
@@ -155,8 +249,9 @@ counterfactual_sim <- function(rounding_policy) {
         mc.cores = num_cores,
         mc.preschedule = TRUE,
         mc.cleanup = TRUE
-      )
-    
+      ) %>%
+      bind_rows()
+
     counterfactual_optimal_tokens_df <- counter_optimal_tokens_baseline %>%
       mutate(only_20note = "All coins and notes") %>%
       bind_rows(
@@ -164,29 +259,25 @@ counterfactual_sim <- function(rounding_policy) {
         y = counter_optimal_tokens_only_20note %>%
           mutate(only_20note = "Only $20 note")
       )
-    
-    write_rds(
-      x = counterfactual_optimal_tokens_df,
-      file = str_c(
-        "counter_optimal_denom_model_solutions_",
-        Sys.Date(),
-        ".rds"
-      )
+
+    save(
+      list = c("counterfactual_optimal_tokens_df", "stylized_exercise_2"),
+      file = str_c("counterfactual-results_", Sys.Date(), ".RData")
     )
-    
+
   } else {
     counter_path <- str_c(
       "counter_optimal_denom_model_solutions_", last_run, ".RData"
     )
     load(counter_path)
-    
+
   }
-  
+
   postCounter_df <- counterfactual_optimal_tokens_df %>%
     bind_cols(
       x = .,
       y = bind_rows(
-        x = counterfactual_tran_df, 
+        x = counterfactual_tran_df,
         y = counterfactual_tran_df
       )
     ) %>%
@@ -194,11 +285,13 @@ counterfactual_sim <- function(rounding_policy) {
     dplyr::rename(n_tokens_counter = n_tokens) %>%
     inner_join(
       x = .,
-      y = optimal_tokens_df %>%
+      y = counterfactual_optimal_tokens_df %>%
         bind_cols(., bind_rows(tran_df, tran_df)) %>%
         dplyr::rename(alpha = amnt) %>%
-        dplyr::select(uasid, date, diary_day, tran, alpha, has_2note, n_tokens),
-      by = c("uasid", "date", "diary_day", "tran", "has_2note")
+        dplyr::select(
+          uasid, date, diary_day, tran, alpha, only_20note, n_tokens
+        ),
+      by = c("uasid", "date", "diary_day", "tran", "only_20note")
     ) %>%
     mutate(
       Delta_alpha = round(alpha_tilde, 2) - round(alpha, digits = 2),
@@ -218,27 +311,46 @@ counterfactual_sim <- function(rounding_policy) {
           "Business that primarily sells services"
         )
       )
-    )
-  
+    ) %>%
+    as_tibble()
+
   return(postCounter_df)
 }
 
 #===============================================================================
         # COUNTERFACTUAL SIMULATION: ELIMINATION OF THE PENNY #
 #===============================================================================
-if (run_stylized == TRUE) {
-  stylized_exercise_1_counter <- calc_optimal_tokens(
-    amounts_list = as.list(seq(4.05, 5, 0.05)),
-    using_tokens = c(0.05, 0.10, 0.25, 0.50,
-                     1, 5, 10, 20, 50, 100),
-    only_20note = FALSE
-  )
-  
-}
-
 # Re-solving the model under the different rounding policies
 symmetric_pol_df <- counterfactual_sim(rounding_policy = "symmetric")
 asymmetric_pol_df <- counterfactual_sim(rounding_policy = "asymmetric")
+
+save(
+  list = str_c(c("asymmetric", "symmetric"), "_pol_df"),
+  file = str_c("policy-results_", Sys.Date(), ".RData")
+)
+
+#===============================================================================
+# Here we are going to estimate the price effects of the rounding policies
+# on consumers. We aggregate the transactions to the monthly level so that
+# the results are more interpretable.
+price_effects_results <- list(symmetric_pol_df, asymmetric_pol_df) %>%
+  as.list() %>%
+  purrr::map(
+    .x = .,
+    .f = function(using_df) {
+      
+      matching_df <- tibble(
+        diary_day = rep(c(1:3), length(2015:2019)),
+        year = 2015:2019
+      )
+      est_df <- full_join(
+        x = using_df,
+        y = matching_df,
+        by = c("uasid", "diary_day", "year")
+      )
+
+    }
+  )
 
 #===============================================================================
 # EVERYTHING BENEATH HERE WILL NEED TO GET EDITED OR WRAPPED INTO A MAP()
@@ -266,7 +378,7 @@ c(mean, sd, median, p25, p75, p95, min, max) %>%
   purrr::map(
     .f = function(h) {
       output <- h(postCounter_df$n_tokens, na.rm = TRUE)
-      
+
       return(output)
     }
   )
@@ -280,7 +392,7 @@ c(mean, sd, median, p25, p75, p95, min, max) %>%
       output <- h(subset(postCounter_df, alpha >= 0.01 &
                            alpha <= 100)$n_tokens,
                   na.rm = TRUE)
-      
+
       return(output)
     }
   )
@@ -291,7 +403,7 @@ c(mean, sd, median, p25, p75, p95, min, max) %>%
     .f = function(h) {
       output <-
         h(subset(postCounter_df, alpha  > 100)$n_tokens, na.rm = TRUE)
-      
+
       return(output)
     }
   )
@@ -303,7 +415,7 @@ c(mean, sd, median, p25, p75, p95, min, max) %>%
   purrr::map(
     .f = function(h) {
       output <- h(postCounter_df$n_tokens_counter, na.rm = TRUE)
-      
+
       return(output)
     }
   )
@@ -318,7 +430,7 @@ c(mean, sd, median, p25, p75, p95, min, max) %>%
         h(subset(postCounter_df, alpha >= 0.01 &
                    alpha <= 100)$n_tokens,
           na.rm = TRUE)
-      
+
     }
   )
 
@@ -328,7 +440,7 @@ c(mean, sd, median, p25, p75, p95, min, max) %>%
     .f = function(h) {
       output <- h(subset(postCounter_df, alpha  > 100)$n_tokens_counter,
                   na.rm = TRUE)
-      
+
       return(output)
     }
   )
@@ -358,7 +470,7 @@ burden_delta_hypTest <- function(df) {
       interval = str_c("[", round(ci_lower, 2), ", ", round(ci_upper, 2), "]")
     ) %>%
     dplyr::select(mean_current, mean_counter, Delta, se, interval)
-  
+
   return(out)
 }
 
@@ -369,23 +481,22 @@ hyp_tests <- c("All coins and notes", "No $2 note") %>%
       using_data <- postCounter_df %>%
         subset(has_2note == which_economy) %>%
         mutate(economy = which_economy)
-      
+
       all_calc <- using_data %>%
         burden_delta_hypTest(df = .) %>%
         mutate(economy = which_economy,
                var = "all")
-      
-      lt100_calc <-
-        subset(using_data, alpha >= 0.01 & alpha <= 100) %>%
+
+      lt100_calc <- subset(using_data, alpha >= 0.01 & alpha <= 100) %>%
         burden_delta_hypTest(df = .) %>%
         mutate(economy = which_economy,
                var = "<= 100")
-      
+
       gt100_calc <- subset(using_data, alpha > 100) %>%
         burden_delta_hypTest(df = .) %>%
         mutate(economy = which_economy,
                var = "> 100")
-      
+
       edu_calc <- using_data$education_ %>%
         unique() %>%
         na.omit() %>%
@@ -394,18 +505,18 @@ hyp_tests <- c("All coins and notes", "No $2 note") %>%
         map(
           .f = function(e) {
             print(e)
-            
+
             out <- using_data %>%
               subset(education_ == e) %>%
               burden_delta_hypTest(df = .) %>%
               mutate(economy = which_economy,
                      var = e)
-            
+
             return(out)
-            
+
           }
         )
-      
+
       income_calc <- using_data$income_ %>%
         unique() %>%
         na.omit() %>%
@@ -414,26 +525,25 @@ hyp_tests <- c("All coins and notes", "No $2 note") %>%
         map(
           .f = function(i) {
             print(i)
-            
+
             out <- using_data %>%
               subset(income_ == i) %>%
               burden_delta_hypTest(df = .) %>%
               mutate(economy = which_economy,
                      var = i)
-            
+
             return(out)
-            
+
           }
         )
-      
+
       output <- all_calc %>%
         bind_rows(., lt100_calc) %>%
         bind_rows(., gt100_calc) %>%
         bind_rows(., edu_calc) %>%
         bind_rows(., income_calc)
-      
+
       return(output)
-      
     }
   )
 
