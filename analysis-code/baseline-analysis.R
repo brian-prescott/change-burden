@@ -288,7 +288,7 @@ sumStat_table %>%
 # leave it in the model.
 if (run_stylized == TRUE) {
   stylized_exercise_1 <- calc_optimal_tokens(
-      amounts_list = as.list(seq(4.01, 5, 0.01)),
+      amounts_list = as.list(seq(4, 5, 0.01)),
       using_tokens = c(0.01, 0.05, 0.10, 0.25, 0.50,
                        1, 5, 10, 20, 50, 100),
       only_20note = FALSE

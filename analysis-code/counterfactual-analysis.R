@@ -197,8 +197,6 @@ counterfactual_sim <- function(rounding_policy) {
       ) %>%
       unlist() %>%
       tibble(amnt = .)
-
-
     counterfactual_tran_df <- tran_df %>%
       dplyr::select(-amnt) %>%
       bind_cols(
@@ -217,7 +215,7 @@ counterfactual_sim <- function(rounding_policy) {
   if (initial_run == TRUE) {
       if (run_stylized == TRUE) {
         stylized_exercise_2 <- calc_optimal_tokens(
-          amounts_list = as.list(seq(4.05, 5, 0.05)),
+          amounts_list = as.list(seq(4, 5, 0.05)),
           using_tokens = c(
             0.05, 0.10, 0.25, 0.50,
             1, 5, 10, 20, 50, 100
