@@ -401,65 +401,102 @@ price_effects_calcs <- 1:2 %>%
   purrr::map(
     .x = .,
     .f = function(i) {
-      df <- price_effects_dfs[[i]]
-      policy <- str_c(c("symmetric", "asymmetric"), "-policy")
+      final_out <- c("All coins and notes", "Only $20 note") %>%
+        as.list() %>%
+        purrr::map(
+          .x = .,
+          .f = function(j) {
+            df <- price_effects_dfs[[i]] %>%
+              dplyr::filter(only_20note == j)
+            policy <- str_c(c("symmetric", "asymmetric"), "-policy")
 
-      est_df <- df %>%
-        mutate_at(
-          .vars = vars(contains("alpha")),
-          .funs = ~ ifelse(
-            test = is.na(.),
-            yes = 0,
-            no = .
-          )
-        ) %>%
-        mutate(counter = 1) %>%
-        group_by(uasid, year, diary_day) %>%
-        summarize_at(
-          .vars = vars(contains("alpha"), counter),
-          .funs = ~ sum(x = ., na.rm = TRUE)
-        ) %>%
-        ungroup() %>%
-        left_join(
-          x = .,
-          y = df %>%
-          dplyr::select(-c(
-            contains("delta"), contains("alpha"), contains("token"), a,
-            pi, merch, used_cash, amnt, tran, date, diary_day, payee,
-            payment, in_person, only_20note, highest_education, income_hh
-          )) %>%
-          unique() %>%
-          dplyr::filter(!is.na(age) & !is.na(hhincome)),
-          by = c("uasid", "year")
-        ) %>%
-        mutate(
-          year = factor(
-            x = year,
-            levels = c(2015:2019)
-          ),
-          income_ = relevel(
-            income_, ref = "50-74k"
-          ),
-          education_ = relevel(
-            education_, ref = "High school diploma"
-          )
+            est_df <- df %>%
+              mutate_at(
+                .vars = vars(contains("alpha")),
+                .funs = ~ ifelse(
+                  test = is.na(.),
+                  yes = 0,
+                  no = .
+                )
+              ) %>%
+              mutate(counter = 1) %>%
+              group_by(uasid, year, diary_day) %>%
+              summarize_at(
+                .vars = vars(contains("alpha"), counter),
+                .funs = ~ sum(x = ., na.rm = TRUE)
+              ) %>%
+              ungroup() %>%
+              left_join(
+                x = .,
+                y = df %>%
+                dplyr::select(-c(
+                  contains("delta"), contains("alpha"), contains("token"), a,
+                  pi, merch, used_cash, amnt, tran, date, diary_day, payee,
+                  payment, in_person, only_20note, highest_education, income_hh
+                )) %>%
+                unique() %>%
+                dplyr::filter(!is.na(age) & !is.na(hhincome)),
+                by = c("uasid", "year")
+              ) %>%
+              mutate(
+                year = factor(
+                  x = year,
+                  levels = c(2015:2019)
+                ),
+                income_ = relevel(
+                  income_, ref = "50-74k"
+                ),
+                education_ = relevel(
+                  education_, ref = "Bachelor's degree"
+                ),
+                race_ = case_when(
+                  race_black == 1 ~ "Black",
+                  race_asian == 1 ~ "Asian",
+                  race_other == 1 ~ "Other",
+                  race_white == 1 ~ "White"
+                ),
+                race_ = factor(
+                  x = race_,
+                  levels = c("White", "Asian", "Black", "Other")
+                )
+              )
+
+            est <- fixest::feols(
+              31 * Delta_alpha ~ income_ + age_cohort_ + banked + education_ +
+                work_employed + married + hh_size + gender + race_ + age +
+                hispaniclatino | year,
+              cluster = "uasid",
+              se = "cluster",
+              data = est_df
+            )
+            print(paste(j, c("symmetric", "asymmetric")[i], "results"))
+            print(summary(est))
+
+            return(est)
+          }
         )
+    names(final_out) <- c("all_notes", "only_20notes")
 
-      est <- fixest::feols(
-        31 * Delta_alpha ~ income_ + age_cohort_ + banked + education_ +
-          married + hh_size + gender + race_white + race_black + race_asian +
-          age + hispaniclatino | year,
-        cluster = "uasid",
-        se = "cluster",
-        data = est_df
-      )
-      print(paste(c("symmetric", "asymmetric")[i], "results"))
-      print(summary(est))
+    return(final_out)
+  }
+)
+names(price_effects_calcs) <- str_c(c("symm", "asymm"), "_results")
 
-      return(est)
-    }
-  )
-names(est) <- str_c(c("symm", "asymm"), "-results")
+# Exporting the results for LaTeX
+etable(
+  price_effects_calcs$symm_results$all_notes,
+  price_effects_calcs$symm_results$only_20notes,
+  price_effects_calcs$asymm_results$all_notes,
+  price_effects_calcs$asymm_results$only_20notes,
+  tex = FALSE
+)
+etable(
+  price_effects_calcs$symm_results$all_notes,
+  price_effects_calcs$symm_results$only_20notes,
+  price_effects_calcs$asymm_results$all_notes,
+  price_effects_calcs$asymm_results$only_20notes,
+  tex = TRUE
+)
 
 #===============================================================================
 # EVERYTHING BENEATH HERE WILL NEED TO GET EDITED OR WRAPPED INTO A MAP()
