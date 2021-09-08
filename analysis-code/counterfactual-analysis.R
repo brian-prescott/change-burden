@@ -23,7 +23,7 @@
 
 # Cleaning out the environment before running the script
 rm(list = ls())
-initial_run <- TRUE
+initial_run <- FALSE
 run_stylized <- TRUE
 last_run <- "2021-09-07"
 
@@ -38,13 +38,14 @@ library(EnvStats)
 library(grDevices)
 library(graphics)
 library(xtable)
+library(fixest)
 
 #===============================================================================
 # PARAMETERS #
 #===============================================================================
 # insert the path to your datasets here
 # General directory for more robust exporting
-directory <- str_c(Sys.getenv("OLDPWD"), "/change-burden/")
+directory <- stringr::str_remove(Sys.getenv("PWD"), "analysis-code")
 # Insert the path to the dataset here
 setwd(paste0(directory, "data/"))
 
@@ -320,37 +321,145 @@ counterfactual_sim <- function(rounding_policy) {
 #===============================================================================
         # COUNTERFACTUAL SIMULATION: ELIMINATION OF THE PENNY #
 #===============================================================================
-# Re-solving the model under the different rounding policies
-symmetric_pol_df <- counterfactual_sim(rounding_policy = "symmetric")
-asymmetric_pol_df <- counterfactual_sim(rounding_policy = "asymmetric")
+# If you have already done the initial solving then you can skip the first
+# part of the conditional. Note, solving the model under both policies takes
+# approximately 20 minutes with 6 cores.
+if (initial_run == TRUE) {
+  # Re-solving the model under the different rounding policies
+  symmetric_pol_df <- counterfactual_sim(rounding_policy = "symmetric")
+  asymmetric_pol_df <- counterfactual_sim(rounding_policy = "asymmetric")
 
-save(
-  list = str_c(c("asymmetric", "symmetric"), "_pol_df"),
-  file = str_c("policy-results_", Sys.Date(), ".RData")
-)
+  save(
+    list = str_c(c("asymmetric", "symmetric"), "_pol_df"),
+    file = str_c("policy-results_", Sys.Date(), ".RData")
+  )
+
+} else {
+  load(
+    file = str_c("policy-results_", last_run, ".RData")
+  )
+
+}
 
 #===============================================================================
 # Here we are going to estimate the price effects of the rounding policies
 # on consumers. We aggregate the transactions to the monthly level so that
 # the results are more interpretable.
-price_effects_results <- list(symmetric_pol_df, asymmetric_pol_df) %>%
+price_effects_dfs <- list(symmetric_pol_df, asymmetric_pol_df) %>%
   as.list() %>%
   purrr::map(
     .x = .,
     .f = function(using_df) {
-      
-      matching_df <- tibble(
-        diary_day = rep(c(1:3), length(2015:2019)),
-        year = 2015:2019
-      )
+      matching_df <- using_df %>%
+        mutate(new_id = str_c(uasid, year, sep = "-")) %>%
+        dplyr::select(new_id) %>%
+        unlist() %>%
+        unique() %>%
+        as.list() %>%
+        purrr::map(
+          .x = .,
+          .f = function(id) {
+            output <- data.frame(
+              uasid = str_sub(id, 1, 6),
+              year = as.numeric(str_sub(id, 8, 11))
+            ) %>%
+            full_join(
+              x = .,
+              y = data.frame(
+                year = rep(as.numeric(str_sub(id, 8, 11)), 3),
+                diary_day = 1:3
+              ),
+              by = "year"
+            ) %>%
+            as_tibble()
+
+            return(output)
+          }
+        ) %>%
+        bind_rows() %>%
+        as_tibble() %>%
+        mutate_at(
+          .vars = vars(uasid),
+          .funs = as.numeric
+        )
+
       est_df <- full_join(
-        x = using_df,
+        x = using_df %>%
+          mutate(year = as.numeric(as.character(year))),
         y = matching_df,
         by = c("uasid", "diary_day", "year")
-      )
+      ) %>%
+      as_tibble()
 
+      return(est_df)
     }
   )
+names(price_effects_dfs) <- c("symm_df", "asymm_df")
+
+price_effects_calcs <- 1:2 %>%
+  as.list() %>%
+  purrr::map(
+    .x = .,
+    .f = function(i) {
+      df <- price_effects_dfs[[i]]
+      policy <- str_c(c("symmetric", "asymmetric"), "-policy")
+
+      est_df <- df %>%
+        mutate_at(
+          .vars = vars(contains("alpha")),
+          .funs = ~ ifelse(
+            test = is.na(.),
+            yes = 0,
+            no = .
+          )
+        ) %>%
+        mutate(counter = 1) %>%
+        group_by(uasid, year, diary_day) %>%
+        summarize_at(
+          .vars = vars(contains("alpha"), counter),
+          .funs = ~ sum(x = ., na.rm = TRUE)
+        ) %>%
+        ungroup() %>%
+        left_join(
+          x = .,
+          y = df %>%
+          dplyr::select(-c(
+            contains("delta"), contains("alpha"), contains("token"), a,
+            pi, merch, used_cash, amnt, tran, date, diary_day, payee,
+            payment, in_person, only_20note, highest_education, income_hh
+          )) %>%
+          unique() %>%
+          dplyr::filter(!is.na(age) & !is.na(hhincome)),
+          by = c("uasid", "year")
+        ) %>%
+        mutate(
+          year = factor(
+            x = year,
+            levels = c(2015:2019)
+          ),
+          income_ = relevel(
+            income_, ref = "50-74k"
+          ),
+          education_ = relevel(
+            education_, ref = "High school diploma"
+          )
+        )
+
+      est <- fixest::feols(
+        31 * Delta_alpha ~ income_ + age_cohort_ + banked + education_ +
+          married + hh_size + gender + race_white + race_black + race_asian +
+          age + hispaniclatino | year,
+        cluster = "uasid",
+        se = "cluster",
+        data = est_df
+      )
+      print(paste(c("symmetric", "asymmetric")[i], "results"))
+      print(summary(est))
+
+      return(est)
+    }
+  )
+names(est) <- str_c(c("symm", "asymm"), "-results")
 
 #===============================================================================
 # EVERYTHING BENEATH HERE WILL NEED TO GET EDITED OR WRAPPED INTO A MAP()
@@ -474,7 +583,7 @@ burden_delta_hypTest <- function(df) {
   return(out)
 }
 
-hyp_tests <- c("All coins and notes", "No $2 note") %>%
+hyp_tests <- c("All coins and notes", "Only $20 note") %>%
   as.list() %>%
   purrr::map(
     .f = function(which_economy) {
@@ -555,7 +664,7 @@ bind_rows(hyp_tests) %>%
   print(include.rownames = FALSE)
 
 bind_rows(hyp_tests) %>%
-  subset(economy == "No $2 note") %>%
+  subset(economy == "Only $20 note") %>%
   dplyr::select(-economy) %>%
   dplyr::select(var, everything()) %>%
   xtable::xtable() %>%
