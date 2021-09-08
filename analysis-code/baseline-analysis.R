@@ -45,7 +45,7 @@ library(boot)
 # PARAMETERS #
 #===============================================================================
 # General directory for more robust exporting
-directory <- str_c(Sys.getenv("OLDPWD"), "/change-burden/")
+directory <- stringr::str_remove(Sys.getenv("PWD"), "analysis-code")
 # Insert the path to the dataset here
 setwd(paste0(directory, "data/"))
 
