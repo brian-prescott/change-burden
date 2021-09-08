@@ -25,7 +25,8 @@
 rm(list = ls())
 initial_run <- FALSE
 run_stylized <- TRUE
-last_run <- "2021-09-07"
+last_base_run <- "2021-09-07"
+last_counter_run <- "2021-09-08"
 
 #===============================================================================
 # LIBRARIES #
@@ -267,8 +268,13 @@ counterfactual_sim <- function(rounding_policy) {
     )
 
   } else {
+    baseline_path <- str_c(
+      "baseline-results_", last_base_run, ".RData"
+    )
+    load(baseline_path)
+
     counter_path <- str_c(
-      "counter_optimal_denom_model_solutions_", last_run, ".RData"
+      "counterfactual-results_", last_counter_run, ".RData"
     )
     load(counter_path)
 
@@ -284,13 +290,18 @@ counterfactual_sim <- function(rounding_policy) {
     ) %>%
     mutate(alpha_tilde = a) %>%
     dplyr::rename(n_tokens_counter = n_tokens) %>%
+    bind_cols(
+      x = .,
+      y = optimal_tokens_df %>%
+        dplyr::select(n_tokens)
+    ) %>%
     inner_join(
       x = .,
       y = counterfactual_optimal_tokens_df %>%
         bind_cols(., bind_rows(tran_df, tran_df)) %>%
         dplyr::rename(alpha = amnt) %>%
         dplyr::select(
-          uasid, date, diary_day, tran, alpha, only_20note, n_tokens
+          uasid, date, diary_day, tran, alpha, only_20note
         ),
       by = c("uasid", "date", "diary_day", "tran", "only_20note")
     ) %>%
@@ -316,29 +327,6 @@ counterfactual_sim <- function(rounding_policy) {
     as_tibble()
 
   return(postCounter_df)
-}
-
-#===============================================================================
-        # COUNTERFACTUAL SIMULATION: ELIMINATION OF THE PENNY #
-#===============================================================================
-# If you have already done the initial solving then you can skip the first
-# part of the conditional. Note, solving the model under both policies takes
-# approximately 20 minutes with 6 cores.
-if (initial_run == TRUE) {
-  # Re-solving the model under the different rounding policies
-  symmetric_pol_df <- counterfactual_sim(rounding_policy = "symmetric")
-  asymmetric_pol_df <- counterfactual_sim(rounding_policy = "asymmetric")
-
-  save(
-    list = str_c(c("asymmetric", "symmetric"), "_pol_df"),
-    file = str_c("policy-results_", Sys.Date(), ".RData")
-  )
-
-} else {
-  load(
-    file = str_c("policy-results_", last_run, ".RData")
-  )
-
 }
 
 #===============================================================================
@@ -396,313 +384,153 @@ price_effects_dfs <- list(symmetric_pol_df, asymmetric_pol_df) %>%
   )
 names(price_effects_dfs) <- c("symm_df", "asymm_df")
 
-price_effects_calcs <- 1:2 %>%
-  as.list() %>%
-  purrr::map(
-    .x = .,
-    .f = function(i) {
-      final_out <- c("All coins and notes", "Only $20 note") %>%
-        as.list() %>%
-        purrr::map(
-          .x = .,
-          .f = function(j) {
-            df <- price_effects_dfs[[i]] %>%
-              dplyr::filter(only_20note == j)
-            policy <- str_c(c("symmetric", "asymmetric"), "-policy")
+policy_rounding_calcs <- function(outcome) {
+  using_delta <- ifelse(
+    test = tolower(outcome) == "price", 
+    yes = "Delta_alpha", 
+    no = "Delta_burden"
+  )
 
-            est_df <- df %>%
-              mutate_at(
-                .vars = vars(contains("alpha")),
-                .funs = ~ ifelse(
-                  test = is.na(.),
-                  yes = 0,
-                  no = .
-                )
-              ) %>%
-              mutate(counter = 1) %>%
-              group_by(uasid, year, diary_day) %>%
-              summarize_at(
-                .vars = vars(contains("alpha"), counter),
-                .funs = ~ sum(x = ., na.rm = TRUE)
-              ) %>%
-              ungroup() %>%
-              left_join(
-                x = .,
-                y = df %>%
-                dplyr::select(-c(
-                  contains("delta"), contains("alpha"), contains("token"), a,
-                  pi, merch, used_cash, amnt, tran, date, diary_day, payee,
-                  payment, in_person, only_20note, highest_education, income_hh
-                )) %>%
-                unique() %>%
-                dplyr::filter(!is.na(age) & !is.na(hhincome)),
-                by = c("uasid", "year")
-              ) %>%
-              mutate(
-                year = factor(
-                  x = year,
-                  levels = c(2015:2019)
-                ),
-                income_ = relevel(
-                  income_, ref = "50-74k"
-                ),
-                education_ = relevel(
-                  education_, ref = "Bachelor's degree"
-                ),
-                race_ = case_when(
-                  race_black == 1 ~ "Black",
-                  race_asian == 1 ~ "Asian",
-                  race_other == 1 ~ "Other",
-                  race_white == 1 ~ "White"
-                ),
-                race_ = factor(
-                  x = race_,
-                  levels = c("White", "Asian", "Black", "Other")
-                )
-              )
+  effects_calcs <- 1:2 %>%
+    as.list() %>%
+    purrr::map(
+      .x = .,
+      .f = function(i) {
+        final_out <- c("All coins and notes", "Only $20 note") %>%
+          as.list() %>%
+          purrr::map(
+            .x = .,
+            .f = function(j) {
+              df <- price_effects_dfs[[i]] %>%
+                dplyr::filter(only_20note == j)
+              policy <- str_c(c("symmetric", "asymmetric"), "-policy")
 
-            est <- fixest::feols(
-              31 * Delta_alpha ~ income_ + age_cohort_ + banked + education_ +
+              est_df <- df %>%
+                mutate_at(
+                  .vars = vars(contains("alpha"), contains("Delta")),
+                  .funs = ~ ifelse(
+                    test = is.na(.),
+                    yes = 0,
+                    no = .
+                  )
+                ) %>%
+                mutate(counter = 1) %>%
+                group_by(uasid, year, diary_day) %>%
+                summarize_at(
+                  .vars = vars(contains("alpha"), contains("delta"), counter),
+                  .funs = ~ sum(x = ., na.rm = TRUE)
+                ) %>%
+                ungroup() %>%
+                left_join(
+                  x = .,
+                  y = df %>%
+                  dplyr::select(-c(
+                    contains("delta"), contains("alpha"), contains("token"), a,
+                    pi, merch, used_cash, amnt, tran, date, diary_day, payee,
+                    payment, in_person, only_20note, highest_education, 
+                    income_hh
+                  )) %>%
+                  unique() %>%
+                  dplyr::filter(!is.na(age) & !is.na(hhincome)),
+                  by = c("uasid", "year")
+                ) %>%
+                mutate(
+                  year = factor(
+                    x = year,
+                    levels = c(2015:2019)
+                  ),
+                  income_ = relevel(
+                    income_, ref = "50-74k"
+                  ),
+                  education_ = relevel(
+                    education_, ref = "Bachelor's degree"
+                  ),
+                  race_ = case_when(
+                    race_asian == 1 ~ "Asian",
+                    race_black == 1 ~ "Black",
+                    race_other == 1 ~ "Other",
+                    race_white == 1 ~ "White"
+                  ),
+                  race_ = factor(
+                    x = race_,
+                    levels = c("White", "Asian", "Black", "Other")
+                  ),
+                  unbanked = as.numeric(banked != 1 & !is.na(banked))
+                ) %>%
+                dplyr::rename(Delta = all_of(using_delta))
+
+              est <- fixest::feols(
+                31 * Delta ~ income_ + age_cohort_ + unbanked +  education_ +
                 work_employed + married + hh_size + gender + race_ + age +
                 hispaniclatino | year,
-              cluster = "uasid",
-              se = "cluster",
-              data = est_df
-            )
-            print(paste(j, c("symmetric", "asymmetric")[i], "results"))
-            print(summary(est))
+                se = "cluster",
+                cluster = "uasid",
+                data = est_df
+              )
+              print(paste(j, c("symmetric", "asymmetric")[i], "results"))
+              print(summary(est))
 
-            return(est)
-          }
-        )
-    names(final_out) <- c("all_notes", "only_20notes")
+              return(est)
+            }
+          )
+      names(final_out) <- c("all_notes", "only_20notes")
 
-    return(final_out)
-  }
-)
-names(price_effects_calcs) <- str_c(c("symm", "asymm"), "_results")
+      return(final_out)
+    }
+  )
+  names(effects_calcs) <- str_c(c("symm", "asymm"), "_results")
 
+  return(effects_calcs)
+}
+
+#===============================================================================
+        # COUNTERFACTUAL SIMULATION: ELIMINATION OF THE PENNY #
+#===============================================================================
+# If you have already done the initial solving then you can skip the first
+# part of the conditional. Note, solving the model under both policies takes
+# approximately 20 minutes with 6 cores.
+if (initial_run == TRUE) {
+  # Re-solving the model under the different rounding policies
+  symmetric_pol_df <- counterfactual_sim(rounding_policy = "symmetric")
+  asymmetric_pol_df <- counterfactual_sim(rounding_policy = "asymmetric")
+
+  save(
+    list = str_c(c("asymmetric", "symmetric"), "_pol_df"),
+    file = str_c("policy-results_", Sys.Date(), ".RData")
+  )
+
+} else {
+  load(
+    file = str_c("policy-results_", last_counter_run, ".RData")
+  )
+
+}
+
+price_effects_calcs <- policy_rounding_calcs(outcome = "price")
 # Exporting the results for LaTeX
 etable(
   price_effects_calcs$symm_results$all_notes,
-  price_effects_calcs$symm_results$only_20notes,
   price_effects_calcs$asymm_results$all_notes,
-  price_effects_calcs$asymm_results$only_20notes,
   tex = FALSE
 )
 etable(
   price_effects_calcs$symm_results$all_notes,
-  price_effects_calcs$symm_results$only_20notes,
   price_effects_calcs$asymm_results$all_notes,
-  price_effects_calcs$asymm_results$only_20notes,
   tex = TRUE
 )
 
-#===============================================================================
-# EVERYTHING BENEATH HERE WILL NEED TO GET EDITED OR WRAPPED INTO A MAP()
-# FUNCTION SO THAT IT ACCOUNTS FOR BOTH THE SYMMETRIC AND ASYMMETRIC POLICIES
-
-# Expected number of tokens (coins and notes)
-subset(postCounter_df, has_2note != "No $2 note")$n_tokens %>%
-  mean(na.rm = TRUE) %>%
-  print()
-subset(postCounter_df, has_2note == "No $2 note")$n_tokens %>%
-  mean(na.rm = TRUE) %>%
-  print()
-
-subset(postCounter_df, has_2note != "No $2 note")$n_tokens_counter %>%
-  mean(na.rm = TRUE) %>%
-  print()
-subset(postCounter_df, has_2note == "No $2 note")$n_tokens_counter %>%
-  mean(na.rm = TRUE) %>%
-  print()
-
-#===============================================================================
-# Summary statistics
-c(mean, sd, median, p25, p75, p95, min, max) %>%
-  as.list() %>%
-  purrr::map(
-    .f = function(h) {
-      output <- h(postCounter_df$n_tokens, na.rm = TRUE)
-
-      return(output)
-    }
-  )
-
-#===============================================================================
-# Conditional summary statistics
-c(mean, sd, median, p25, p75, p95, min, max) %>%
-  as.list() %>%
-  purrr::map(
-    .f = function(h) {
-      output <- h(subset(postCounter_df, alpha >= 0.01 &
-                           alpha <= 100)$n_tokens,
-                  na.rm = TRUE)
-
-      return(output)
-    }
-  )
-
-c(mean, sd, median, p25, p75, p95, min, max) %>%
-  as.list() %>%
-  purrr::map(
-    .f = function(h) {
-      output <-
-        h(subset(postCounter_df, alpha  > 100)$n_tokens, na.rm = TRUE)
-
-      return(output)
-    }
-  )
-
-#===============================================================================
-
-c(mean, sd, median, p25, p75, p95, min, max) %>%
-  as.list() %>%
-  purrr::map(
-    .f = function(h) {
-      output <- h(postCounter_df$n_tokens_counter, na.rm = TRUE)
-
-      return(output)
-    }
-  )
-
-#===============================================================================
-
-c(mean, sd, median, p25, p75, p95, min, max) %>%
-  as.list() %>%
-  purrr::map(
-    .f = function(h) {
-      output <-
-        h(subset(postCounter_df, alpha >= 0.01 &
-                   alpha <= 100)$n_tokens,
-          na.rm = TRUE)
-
-    }
-  )
-
-c(mean, sd, median, p25, p75, p95, min, max) %>%
-  as.list() %>%
-  purrr::map(
-    .f = function(h) {
-      output <- h(subset(postCounter_df, alpha  > 100)$n_tokens_counter,
-                  na.rm = TRUE)
-
-      return(output)
-    }
-  )
-
-#===============================================================================
-                          # HYPOTHESIS TESTING #
-#===============================================================================
-set.seed(1995)
-
-# Turning the hypothesis testing code into a function
-burden_delta_hypTest <- function(df) {
-  out <- df %>%
-    summarize(
-      mean_current = mean(n_tokens, na.rm = TRUE),
-      mean_counter = mean(n_tokens_counter, na.rm = TRUE),
-      numer = sqrt(
-        var(n_tokens_counter) + var(n_tokens) -
-          2 * cov(n_tokens_counter, n_tokens)
-      ),
-      denomi = sqrt(n()),
-      se = numer / denomi
-    ) %>%
-    mutate(
-      Delta = mean_counter - mean_current,
-      ci_lower = Delta - 2.576 * se,
-      ci_upper = Delta + 2.576 * se,
-      interval = str_c("[", round(ci_lower, 2), ", ", round(ci_upper, 2), "]")
-    ) %>%
-    dplyr::select(mean_current, mean_counter, Delta, se, interval)
-
-  return(out)
-}
-
-hyp_tests <- c("All coins and notes", "Only $20 note") %>%
-  as.list() %>%
-  purrr::map(
-    .f = function(which_economy) {
-      using_data <- postCounter_df %>%
-        subset(has_2note == which_economy) %>%
-        mutate(economy = which_economy)
-
-      all_calc <- using_data %>%
-        burden_delta_hypTest(df = .) %>%
-        mutate(economy = which_economy,
-               var = "all")
-
-      lt100_calc <- subset(using_data, alpha >= 0.01 & alpha <= 100) %>%
-        burden_delta_hypTest(df = .) %>%
-        mutate(economy = which_economy,
-               var = "<= 100")
-
-      gt100_calc <- subset(using_data, alpha > 100) %>%
-        burden_delta_hypTest(df = .) %>%
-        mutate(economy = which_economy,
-               var = "> 100")
-
-      edu_calc <- using_data$education_ %>%
-        unique() %>%
-        na.omit() %>%
-        str_c() %>%
-        as.list() %>%
-        map(
-          .f = function(e) {
-            print(e)
-
-            out <- using_data %>%
-              subset(education_ == e) %>%
-              burden_delta_hypTest(df = .) %>%
-              mutate(economy = which_economy,
-                     var = e)
-
-            return(out)
-
-          }
-        )
-
-      income_calc <- using_data$income_ %>%
-        unique() %>%
-        na.omit() %>%
-        str_c() %>%
-        as.list() %>%
-        map(
-          .f = function(i) {
-            print(i)
-
-            out <- using_data %>%
-              subset(income_ == i) %>%
-              burden_delta_hypTest(df = .) %>%
-              mutate(economy = which_economy,
-                     var = i)
-
-            return(out)
-
-          }
-        )
-
-      output <- all_calc %>%
-        bind_rows(., lt100_calc) %>%
-        bind_rows(., gt100_calc) %>%
-        bind_rows(., edu_calc) %>%
-        bind_rows(., income_calc)
-
-      return(output)
-    }
-  )
-
-bind_rows(hyp_tests) %>%
-  subset(economy == "All coins and notes") %>%
-  dplyr::select(-economy) %>%
-  dplyr::select(var, everything()) %>%
-  xtable::xtable() %>%
-  print(include.rownames = FALSE)
-
-bind_rows(hyp_tests) %>%
-  subset(economy == "Only $20 note") %>%
-  dplyr::select(-economy) %>%
-  dplyr::select(var, everything()) %>%
-  xtable::xtable() %>%
-  print(include.rownames = FALSE)
+burden_effects_calcs <- policy_rounding_calcs(outcome = "burden")
+etable(
+  burden_effects_calcs$symm_results$all_notes,
+  burden_effects_calcs$symm_results$only_20notes,
+  burden_effects_calcs$asymm_results$all_notes,
+  burden_effects_calcs$asymm_results$only_20notes,
+  tex = FALSE
+)
+etable(
+  burden_effects_calcs$symm_results$all_notes,
+  burden_effects_calcs$symm_results$only_20notes,
+  burden_effects_calcs$asymm_results$all_notes,
+  burden_effects_calcs$asymm_results$only_20notes,
+  tex = TRUE
+)
