@@ -131,7 +131,13 @@ factor2numeric <- function(x)
 #===============================================================================
                                   # DATA IMPORT #
 #===============================================================================
-tran_df <- read_rds("cash_transactions_df.rds") %>%
+# Loading in the dataset for cash only transactions
+load(
+  file = "change-burden-dfs_2021-09-10.RData"
+)
+
+# This is equivalent to the cash_transactions.rds in the "data" folder.
+tran_df <- change_burden_dfs$cash_transactions %>%
   dplyr::rename(uasid = id)
 
 #===============================================================================
