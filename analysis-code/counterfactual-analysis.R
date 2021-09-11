@@ -661,23 +661,6 @@ if (initial_run == TRUE) {
 
 }
 
-price_effects_cash_sym <- price_effect_calcs(
-  dataset = "cash_trans",
-  policy = "symmetric"
-)
-price_effects_cash_asym <- price_effect_calcs(
-  dataset = "cash_trans",
-  policy = "asymmetric"
-)
-price_effects_all_sym <- price_effect_calcs(
-  dataset = "all_trans",
-  policy = "symmetric"
-)
-price_effects_all_asym <- price_effect_calcs(
-  dataset = "all_trans",
-  policy = "asymmetric"
-)
-
 price_effects <- str_c(c("cash", "all"), "_trans") %>%
   as.list() %>%
   purrr::map(
@@ -696,6 +679,7 @@ price_effects <- str_c(c("cash", "all"), "_trans") %>%
     }
   )
 names(price_effects) <- c("cash", "all")
+
 # Exporting the results for LaTeX
 etable(
   price_effects$cash$symm,
