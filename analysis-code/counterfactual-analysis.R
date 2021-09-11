@@ -15,11 +15,12 @@
 # combined to run. I suggest using the already generated model solutions
 # datasets provided on GitHub to review the results. Outside of that, the window
 # containing the script should be extended to the edge of the dashed lines for
-# optimal readibility. The window is approximately 80 lines long. It should be
-# noted that I the uasid variable reported is not actually the "uasid" variable
-# provided by USC but rather is the "id" variable created by the Atlanta Fed.
-# The variable was simply renamed for the purposes of the script. This script
+# optimal readibility. The window is approximately 80 lines long. This script
 # reflects a major revision from the original draft.
+
+# IMPORTANT NOTE: THE VARIABLE UASID IN THE DATASETS IS NOT THE SAME AS THE ONE
+# PROVIDED UAS. RATHER, IT IS THE FRBA ID VARIABLE FROM THE PUBLIC DATASETS THAT
+# HAS BEEN RENAMED FOR THE SAKE OF WORKING WITH THE SCRIPT.
 
 # Cleaning out the environment before running the script
 rm(list = ls())
@@ -55,8 +56,28 @@ set.seed(1995)
 #===============================================================================
                                   # DATA IMPORT #
 #===============================================================================
-tran_df <- read_rds("cash_transactions_df.rds") %>%
-  dplyr::rename(uasid = id)
+load(
+  file = "change-burden-dfs_2021-09-10.RData"
+)
+
+change_burden_dfs <- change_burden_dfs %>%
+  purrr::map(
+    .x = .,
+    .f = function(df) {
+      output <- df %>%
+        dplyr::rename(id = uasid)
+    }
+  )
+save(
+  list = c("change_burden_dfs"),
+  file = "change-burden-dfs_2021-09-10.RData"
+)
+
+# This is equivalent to the cash_transactions.rds in the "data" folder.
+tran_df <- change_burden_dfs$cash_transactions
+
+# The all transactions dataset is the in-person transactions.
+in_person_df <- change_burden_dfs$all_transactions
 
 #===============================================================================
 # FUNCTIONS #
@@ -330,8 +351,11 @@ counterfactual_sim <- function(rounding_policy) {
 #===============================================================================
 # Here we are going to estimate the price effects of the rounding policies
 # on consumers. We aggregate the transactions to the monthly level so that
-# the results are more interpretable.
-price_effects_dfs <- list(symmetric_pol_df, asymmetric_pol_df) %>%
+# the results are more interpretable. We do this for both the cash only
+# transactions and all in-person transactions. This is done to reflect the
+# fact that merchants do not steer consumers in-person and so we should not
+# reflect differential pricing in the face of penny elimination.
+price_effects_dfs <- list(tran_df, in_person_df) %>%
   as.list() %>%
   purrr::map(
     .x = .,
@@ -384,7 +408,7 @@ names(price_effects_dfs) <- c("symm_df", "asymm_df")
 
 policy_rounding_calcs <- function(outcome) {
   using_delta <- ifelse(
-    test = tolower(outcome) == "price", 
+    test = tolower(outcome) == "price",
     yes = "Delta_alpha", 
     no = "Delta_burden"
   )
