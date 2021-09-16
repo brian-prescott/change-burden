@@ -27,7 +27,7 @@ rm(list = ls())
 initial_run <- TRUE
 run_stylized <- TRUE
 last_base_run <- "2021-09-07"
-last_counter_run <- "2021-09-08"
+last_counter_run <- "2021-09-14"
 
 #===============================================================================
 # LIBRARIES #

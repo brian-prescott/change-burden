@@ -24,10 +24,10 @@
 
 # Cleaning out the environment before running the script
 rm(list = ls())
-initial_run <- FALSE
+initial_run <- TRUE
 run_stylized <- TRUE
 last_base_run <- "2021-09-07"
-last_counter_run <- "2021-09-07"
+last_counter_run <- "2021-09-14"
 
 #===============================================================================
 # LIBRARIES #
@@ -59,7 +59,6 @@ set.seed(1995)
 load(
   file = "change-burden-dfs_2021-09-10.RData"
 )
-
 
 # This is equivalent to the cash_transactions.rds in the "data" folder.
 tran_df <- change_burden_dfs$cash_transactions %>%
@@ -277,17 +276,18 @@ counterfactual_sim <- function(rounding_policy) {
     )
 
   } else {
-    baseline_path <- str_c(
-      "baseline-results_", last_base_run, ".RData"
-    )
-    load(baseline_path)
-
     counter_path <- str_c(
       "counterfactual-results_", last_counter_run, ".RData"
     )
     load(counter_path)
 
   }
+  
+  # We will need this data regardless
+  baseline_path <- str_c(
+    "baseline-results_", last_base_run, ".RData"
+  )
+  load(baseline_path)
 
   postCounter_df <- counterfactual_optimal_tokens_df %>%
     bind_cols(
@@ -471,6 +471,9 @@ price_effects_dfs <- list(tran_df, in_person_df) %>%
   )
 names(price_effects_dfs) <- c("cash_trans", "all_trans")
 
+# THIS CODE NEEDS TO BE WRITTEN STILL
+burden_effects_dfs <- ...
+
 policy_rounding_calcs <- function(outcome) {
   using_delta <- ifelse(
     test = tolower(outcome) == "price",
@@ -488,7 +491,7 @@ policy_rounding_calcs <- function(outcome) {
           purrr::map(
             .x = .,
             .f = function(j) {
-              df <- price_effects_dfs[[i]] %>%
+              df <- burden_effects_dfs[[i]] %>%
                 dplyr::filter(only_20note == j)
               policy <- str_c(c("symmetric", "asymmetric"), "-policy")
 
