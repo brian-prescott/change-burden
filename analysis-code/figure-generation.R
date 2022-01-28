@@ -1,7 +1,6 @@
 #===============================================================================
 # PREAMBLE #
 #===============================================================================
-
 # Written by: Brian Prescott
 # Last edited: 2021-05-06
 
@@ -24,10 +23,10 @@
 # Cleaning out the environment before running the script
 rm(list = ls())
 
-initial_run <- TRUE
-run_stylized <- TRUE
+initial_run <- FALSE
+run_stylized <- FALSE
 last_base_run <- "2021-09-07"
-last_counter_run <- "2021-09-08"
+last_counter_run <- "2022-01-08"
 
 #===============================================================================
 # LIBRARIES #
@@ -71,8 +70,10 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
   } else {
     
     # Set up the page
-    grid.newpage()
-    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    grid.newpage() #nolint
+    pushViewport(
+      viewport(layout = grid.layout(nrow(layout), ncol(layout)))
+    ) #nolint
 
     # Make each plot, in the correct location
     for (i in 1:numPlots) {
@@ -108,7 +109,7 @@ tran_df <- read_rds("cash_transactions_df.rds") %>%
 
 load(str_c("baseline-results_", last_base_run, ".RData"))
 load(str_c("policy-results_", last_counter_run, ".RData"))
-load("counterfactual-results_2021-09-07.RData")
+load("counterfactual-results_2022-01-08.RData")
 
 #===============================================================================
 # DATA PREP #
@@ -124,7 +125,8 @@ baseline_figures_df <- c("Symmetric policy", "Asymmetric policy") %>%
           .x = .,
           .f = function(economy) {
             threshold <- optimal_tokens_df %>%
-              dplyr::filter(only_20note == economy & a <= 100) %>%
+              dplyr::rename(alpha = a) %>%
+              dplyr::filter(only_20note == economy & alpha <= 100) %>%
               dplyr::select(n_tokens) %>%
               table() %>%
               prop.table() %>%
@@ -315,13 +317,48 @@ ggplot2::ggsave(
   width = output_width
 )
 #===============================================================================
-shares_figure_df %>%
+shares_figure_data <- shares_figure_df %>%
   mutate(
     which_policy = factor(
       x = which_policy,
       levels = str_c(c("Symmetric", "Asymmetric"), " policy")
     )
+  )
+
+# Checking to see where and how the symmetric policy is different from the
+# asymmetric variant. Differences exist, however, they are very small.
+shares_figure_data %>%
+  dplyr::filter(
+    which_notes == "All coins and notes" &
+    model == "Without pennies (counterfactual)" &
+    which_policy == "Asymmetric policy"
   ) %>%
+  dplyr::select(share, n_tokens)
+shares_figure_data %>%
+  dplyr::filter(
+    which_notes == "All coins and notes" &
+    model == "Without pennies (counterfactual)" &
+    which_policy == "Symmetric policy"
+  ) %>%
+  dplyr::select(share, n_tokens)
+
+shares_figure_data %>%
+  dplyr::filter(
+    which_notes == "Only $20 note" &
+    model == "Without pennies (counterfactual)" &
+    which_policy == "Asymmetric policy"
+  ) %>%
+  dplyr::select(share, n_tokens)
+shares_figure_data %>%
+  dplyr::filter(
+    which_notes == "Only $20 note" &
+    model == "Without pennies (counterfactual)" &
+    which_policy == "Symmetric policy"
+  ) %>%
+  dplyr::select(share, n_tokens)
+
+# Plotting the results
+shares_figure_data %>%
   ggplot(
     data = .,
     aes(

@@ -237,14 +237,18 @@ sumStat_table <- list(mean, sd, median, min, max) %>%
             uasid
           )
         ) %>%
-        mutate(unbanked = as.numeric(bnk_acnt_adopt == 0)) %>%
+        dplyr::mutate(unbanked = as.numeric(bnk_acnt_adopt == 0)) %>%
         dplyr::select(-bnk_acnt_adopt) %>%
-        summarise_all(.tbl = .,
-                      .funs = ~ h(x = ., na.rm = TRUE)) %>%
+        dplyr::summarise_all(
+          .tbl = .,
+          .funs = ~ h(x = ., na.rm = TRUE)
+        ) %>%
         t() %>%
         data.frame() %>%
-        rownames_to_column(.data = .,
-                           var = "Covariate") %>%
+        dplyr::rownames_to_column(
+          .data = .,
+          var = "Covariate"
+        ) %>%
         arrange(Covariate) %>%
         dplyr::rename(h = ".")
 
@@ -254,7 +258,7 @@ sumStat_table <- list(mean, sd, median, min, max) %>%
   ) %>%
   purrr::reduce(
     .x = .,
-    .f = inner_join,
+    .f = dplyr::inner_join,
     by = "Covariate"
   ) %>%
   dplyr::rename(
@@ -263,7 +267,7 @@ sumStat_table <- list(mean, sd, median, min, max) %>%
     median = h
   )
 sumStat_table %>%
-  bind_rows(
+  dplyr::bind_rows(
     x = .,
     y = merch_sumStats %>%
       dplyr::rename(
@@ -271,8 +275,8 @@ sumStat_table %>%
         sd = h.y,
         median = h)
   ) %>%
-  mutate_at(
-    .vars = vars(-Covariate),
+  dplyr::mutate_at(
+    .vars = dplyr::vars(-Covariate),
     .funs = ~ round(x = ., digits = 2)
   ) %>%
   dplyr::rename(max = median) %>%
@@ -345,15 +349,15 @@ optimal_tokens_only_20note <- amnt_list %>%
   )
 
 optimal_tokens_df <- optimal_tokens_baseline %>%
-  bind_rows() %>%
-  mutate(only_20note = "All coins and notes") %>%
-  bind_rows(
+  dplyr::bind_rows() %>%
+  dplyr::mutate(only_20note = "All coins and notes") %>%
+  dplyr::bind_rows(
     x = .,
     y = optimal_tokens_only_20note %>%
-      bind_rows() %>%
-      mutate(only_20note = "Only $20 note")
+      dplyr::bind_rows() %>%
+      dplyr::mutate(only_20note = "Only $20 note")
   ) %>%
-  as_tibble()
+  tibble::as_tibble()
 
 save(
   list = c("optimal_tokens_df", "stylized_exercise_1"),

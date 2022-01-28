@@ -1,7 +1,6 @@
 #===============================================================================
 # PREAMBLE #
 #===============================================================================
-
 # Written by: Brian Prescott
 # Last edited: 2021-05-06
 
@@ -24,15 +23,16 @@
 
 # Cleaning out the environment before running the script
 rm(list = ls())
-initial_run <- FALSE
+initial_run <- TRUE
 run_stylized <- TRUE
 last_base_run <- "2021-09-07"
-last_counter_run <- "2021-09-07"
+last_counter_run <- "2022-01-08"
 
 #===============================================================================
-# LIBRARIES #
+                                # LIBRARIES #
 #===============================================================================
 library(tidyverse)
+library(stringi)
 library(haven)
 library(lpSolve)
 library(stargazer)
@@ -43,23 +43,23 @@ library(xtable)
 library(fixest)
 
 #===============================================================================
-# PARAMETERS #
+                                # PARAMETERS #
 #===============================================================================
 # insert the path to your datasets here
 # General directory for more robust exporting
 directory <- stringr::str_remove(Sys.getenv("PWD"), "analysis-code")
 # Insert the path to the dataset here
-setwd(paste0(directory, "data/"))
+setwd(paste0(directory, "/data/"))
 
 set.seed(1995)
 
 #===============================================================================
                                   # DATA IMPORT #
 #===============================================================================
+# This date is fixed in time because I made the datasets on this date.
 load(
   file = "change-burden-dfs_2021-09-10.RData"
 )
-
 
 # This is equivalent to the cash_transactions.rds in the "data" folder.
 tran_df <- change_burden_dfs$cash_transactions %>%
@@ -70,7 +70,7 @@ in_person_df <- change_burden_dfs$all_transactions %>%
   dplyr::rename(uasid = id)
 
 #===============================================================================
-# FUNCTIONS #
+                                # FUNCTIONS #
 #===============================================================================
 # These are just wrapper functions
 p25 <- function(X, na.rm)
@@ -101,21 +101,30 @@ asymmetric_rounding <- function(amount) {
   rounded_down_upper <- as.character(6:7)
   rounded_down <- c(rounded_down_lower, rounded_down_upper)
 
-  if (str_sub(amount, 4, 5) == "99") {
-    counter_amount <- as.numeric(
-      str_c(str_sub(amount, 1, 3), "95")
-    )
-  } else if (str_sub(amount, 5, 5) %in% rounded_down) {
-    new_amount <- as.numeric(
-      str_c(
-        str_sub(amount, 1, 4),
+# We are getting rid of the $0.99 pricing rule because it is an unnecessary
+# feature of the model.
+#  if (str_sub(stri_reverse(amount), 1, 3) == "99.") {
+#    counter_amount <- as.numeric(
+#      stri_reverse(str_c("59", str_sub(stri_reverse(amount), 3)))
+#    )
+ # } else 
+ if (str_sub(stri_reverse(amount), 1, 1) %in% rounded_down &
+              !(amount %in% c(seq(1, 1000000, 10), seq(6, 1000000, 10),
+                              seq(2, 1000000, 10), seq(7, 1000000, 10))) &
+              str_sub(stri_reverse(amount), 1, 2) != "1." &
+              str_sub(stri_reverse(amount), 1, 2) != "2." &
+              str_sub(stri_reverse(amount), 1, 2) != "6." &
+              str_sub(stri_reverse(amount), 1, 2) != "7.") {
+    new_amount <- str_c(
         ifelse(
-          test = str_sub(amount, 5, 5) %in% rounded_down_lower,
+          test = str_sub(stri_reverse(amount), 1, 1) %in% rounded_down_lower,
           yes = "5",
           no = "8"
-        )
-      )
-    )
+        ),
+        str_sub(stri_reverse(amount), 2)
+      ) %>%
+      stri_reverse() %>%
+      as.numeric()
     counter_amount <- round(new_amount / 0.05) * 0.05
 
   } else {
@@ -277,17 +286,18 @@ counterfactual_sim <- function(rounding_policy) {
     )
 
   } else {
-    baseline_path <- str_c(
-      "baseline-results_", last_base_run, ".RData"
-    )
-    load(baseline_path)
-
     counter_path <- str_c(
       "counterfactual-results_", last_counter_run, ".RData"
     )
     load(counter_path)
 
   }
+  
+  # We will need this data regardless
+  baseline_path <- str_c(
+    "baseline-results_", last_base_run, ".RData"
+  )
+  load(baseline_path)
 
   postCounter_df <- counterfactual_optimal_tokens_df %>%
     bind_cols(
@@ -339,306 +349,6 @@ counterfactual_sim <- function(rounding_policy) {
 }
 
 #===============================================================================
-# Here we are going to estimate the price effects of the rounding policies
-# on consumers. We aggregate the transactions to the monthly level so that
-# the results are more interpretable. We do this for both the cash only
-# transactions and all in-person transactions. This is done to reflect the
-# fact that merchants do not steer consumers in-person and so we should not
-# reflect differential pricing in the face of penny elimination.
-price_effects_dfs <- list(tran_df, in_person_df) %>%
-  as.list() %>%
-  purrr::map(
-    .x = .,
-    .f = function(using_df) {
-      matching_df <- using_df %>%
-        mutate(new_id = str_c(uasid, year, sep = "-")) %>%
-        dplyr::select(new_id) %>%
-        unlist() %>%
-        unique() %>%
-        as.list() %>%
-        purrr::map(
-          .x = .,
-          .f = function(id) {
-            output <- data.frame(
-              uasid = str_sub(id, 1, 6),
-              year = as.numeric(str_sub(id, 8, 11))
-            ) %>%
-            full_join(
-              x = .,
-              y = data.frame(
-                year = rep(as.numeric(str_sub(id, 8, 11)), 3),
-                diary_day = 1:3
-              ),
-              by = "year"
-            ) %>%
-            as_tibble()
-
-            return(output)
-          }
-        ) %>%
-        bind_rows() %>%
-        as_tibble() %>%
-        mutate_at(
-          .vars = vars(uasid),
-          .funs = as.numeric
-        )
-
-      policies <- c("symmetric", "asymmetric")
-      output_dfs <- policies %>%
-        purrr::map(
-          .x = .,
-          .f = function(policy) {
-            if (policy == "symmetric") {
-              out <- using_df %>%
-                dplyr::rename(alpha = amnt) %>%
-                mutate(
-                  alpha_c = symmetric_rounding(alpha),
-                  Delta_alpha = alpha_c - alpha
-                ) %>%
-                mutate(year = as.numeric(as.character(year))) %>%
-                dplyr::select(uasid, diary_day, year, contains("alpha"))
-
-              est_df <- dplyr::full_join(
-                x = out,
-                y = matching_df,
-                by = c("uasid", "diary_day", "year")
-              ) %>%
-              as_tibble() %>%
-              left_join(
-                x = .,
-                y = using_df %>%
-                mutate(
-                    year = as.numeric(as.character(year)),
-                    unbanked = as.numeric(banked != 1 & !is.na(banked))
-                  ) %>%
-                  dplyr::select(
-                    income_, age_cohort_, unbanked, education_, work_employed,
-                    married, hh_size, gender, contains("race"), age, 
-                    hispaniclatino, year, region, region_year, uasid
-                  ) %>%
-                  group_by(uasid, year) %>%
-                  unique() %>%
-                  ungroup(),
-                by = c("uasid", "year")
-              )
-
-            } else {
-              out <- using_df %>%
-                dplyr::rename(alpha = amnt)
-              alpha_counter <- out$alpha %>%
-                as.list() %>%
-                purrr::map(.f = asymmetric_rounding) %>%
-                unlist() %>%
-                as.numeric()
-              out$alpha_c <- alpha_counter
-
-              est_df <- dplyr::full_join(
-                x = out %>%
-                  mutate(Delta_alpha = alpha_c - alpha) %>%
-                  mutate(year = as.numeric(as.character(year))) %>%
-                  dplyr::select(uasid, diary_day, year, contains("alpha")),
-                y = matching_df,
-                by = c("uasid", "diary_day", "year")
-              ) %>%
-              as_tibble() %>%
-              left_join(
-                x = .,
-                y = using_df %>%
-                  mutate(
-                    year = as.numeric(as.character(year)),
-                    unbanked = as.numeric(banked != 1 & !is.na(banked))
-                  ) %>%
-                  dplyr::select(
-                    income_, age_cohort_, unbanked, education_, work_employed,
-                    married, hh_size, gender, contains("race"), age,
-                    hispaniclatino, year, region, region_year, uasid
-                  ) %>%
-                  group_by(uasid, year) %>%
-                  unique() %>%
-                  ungroup(),
-                by = c("uasid", "year")
-              )
-
-            }
-
-            return(est_df)
-          }
-        )
-      names(output_dfs) <- policies
-
-      return(output_dfs)
-    }
-  )
-names(price_effects_dfs) <- c("cash_trans", "all_trans")
-
-policy_rounding_calcs <- function(outcome) {
-  using_delta <- ifelse(
-    test = tolower(outcome) == "price",
-    yes = "Delta_alpha",
-    no = "Delta_burden"
-  )
-
-  effects_calcs <- 1:2 %>%
-    as.list() %>%
-    purrr::map(
-      .x = .,
-      .f = function(i) {
-        final_out <- c("All coins and notes", "Only $20 note") %>%
-          as.list() %>%
-          purrr::map(
-            .x = .,
-            .f = function(j) {
-              df <- price_effects_dfs[[i]] %>%
-                dplyr::filter(only_20note == j)
-              policy <- str_c(c("symmetric", "asymmetric"), "-policy")
-
-              est_df <- df %>%
-                mutate_at(
-                  .vars = vars(contains("alpha"), contains("Delta")),
-                  .funs = ~ ifelse(
-                    test = is.na(.),
-                    yes = 0,
-                    no = .
-                  )
-                ) %>%
-                mutate(counter = 1) %>%
-                group_by(uasid, year, diary_day) %>%
-                summarize_at(
-                  .vars = vars(contains("alpha"), contains("delta"), counter),
-                  .funs = ~ sum(x = ., na.rm = TRUE)
-                ) %>%
-                ungroup() %>%
-                left_join(
-                  x = .,
-                  y = df %>%
-                  dplyr::select(-c(
-                    contains("delta"), contains("alpha"), contains("token"), a,
-                    pi, merch, used_cash, amnt, tran, date, diary_day, payee,
-                    payment, in_person, only_20note, highest_education,
-                    income_hh
-                  )) %>%
-                  unique() %>%
-                  dplyr::filter(!is.na(age) & !is.na(hhincome)),
-                  by = c("uasid", "year")
-                ) %>%
-                mutate(
-                  year = factor(
-                    x = year,
-                    levels = c(2015:2019)
-                  ),
-                  income_ = relevel(
-                    income_, ref = "50-74k"
-                  ),
-                  education_ = relevel(
-                    education_, ref = "Bachelor's degree"
-                  ),
-                  race_ = case_when(
-                    race_asian == 1 ~ "Asian",
-                    race_black == 1 ~ "Black",
-                    race_other == 1 ~ "Other",
-                    race_white == 1 ~ "White"
-                  ),
-                  race_ = factor(
-                    x = race_,
-                    levels = c("White", "Asian", "Black", "Other")
-                  ),
-                  unbanked = as.numeric(banked != 1 & !is.na(banked))
-                ) %>%
-                dplyr::rename(Delta = all_of(using_delta)) %>%
-                mutate(Delta = -1 * Delta) # adjusting the ordering of Delta
-
-              est <- fixest::feols(
-                31 * Delta ~ income_ + age_cohort_ + unbanked +  education_ +
-                work_employed + married + hh_size + gender + race_ + age +
-                hispaniclatino | year + region + region_year,
-                se = "cluster",
-                cluster = "uasid",
-                data = est_df
-              )
-              print(paste(j, c("symmetric", "asymmetric")[i], "results"))
-              print(summary(est))
-
-              return(est)
-            }
-          )
-      names(final_out) <- c("all_notes", "only_20notes")
-
-      return(final_out)
-    }
-  )
-  names(effects_calcs) <- stringr::str_c(c("symm", "asymm"), "_results")
-
-  return(effects_calcs)
-}
-
-#===============================================================================
-price_effect_calcs <- function(dataset, policy) {
-  df <- price_effects_dfs[[dataset]][[policy]]
-  est_df <- df %>%
-    mutate_at(
-      .vars = vars(contains("alpha")),
-      .funs = ~ ifelse(
-        test = is.na(.),
-        yes = 0,
-        no = .
-      )
-    ) %>%
-    mutate(counter = 1) %>%
-    group_by(uasid, year, diary_day) %>%
-    summarize_at(
-      .vars = vars(contains("alpha"), counter),
-      .funs = ~ sum(x = ., na.rm = TRUE)
-    ) %>%
-    ungroup() %>%
-    left_join(
-      x = .,
-      y = df %>%
-      dplyr::select(-c(contains("alpha"), diary_day)) %>%
-      group_by(uasid, year) %>%
-      unique() %>%
-      ungroup() %>%
-      dplyr::filter(!is.na(education_) & !is.na(income_)),
-      by = c("uasid", "year")
-    ) %>%
-    mutate(
-      year = factor(
-        x = year,
-        levels = c(2015:2019)
-      ),
-      income_ = relevel(
-        income_, ref = "50-74k"
-      ),
-      education_ = relevel(
-        education_, ref = "Bachelor's degree"
-      ),
-      race_ = case_when(
-        race_asian == 1 ~ "Asian",
-        race_black == 1 ~ "Black",
-        race_other == 1 ~ "Other",
-        race_white == 1 ~ "White"
-      ),
-      race_ = factor(
-        x = race_,
-        levels = c("White", "Asian", "Black", "Other")
-      )
-    ) %>%
-    dplyr::rename(Delta = Delta_alpha)
-
-  est <- fixest::feols(
-    31 * Delta ~ unbanked + income_ + education_ + age_cohort_ +
-    work_employed + married + hh_size + gender + race_ + age +
-    hispaniclatino | year + region + region_year,
-    se = "cluster",
-    cluster = "uasid",
-    data = est_df
-  )
-  print(paste(dataset, policy, "results"))
-  print(summary(est))
-
-  return(est)
-}
-
-#===============================================================================
         # COUNTERFACTUAL SIMULATION: ELIMINATION OF THE PENNY #
 #===============================================================================
 # If you have already done the initial solving then you can skip the first
@@ -660,54 +370,3 @@ if (initial_run == TRUE) {
   )
 
 }
-
-price_effects <- str_c(c("cash", "all"), "_trans") %>%
-  as.list() %>%
-  purrr::map(
-    .x = .,
-    .f = function(df) {
-      output <- c("symmetric", "asymmetric") %>%
-        as.list() %>%
-        purrr::map(
-          .x = .,
-          .f = price_effect_calcs,
-          dataset = df
-        )
-      names(output) <- c("symm", "asymm")
-
-      return(output)
-    }
-  )
-names(price_effects) <- c("cash", "all")
-
-# Exporting the results for LaTeX
-etable(
-  price_effects$cash$symm,
-  price_effects$cash$asymm,
-  price_effects$all$symm,
-  price_effects$all$asymm,
-  tex = FALSE
-)
-etable(
-  price_effects$cash$symm,
-  price_effects$cash$asymm,
-  price_effects$all$symm,
-  price_effects$all$asymm,
-  tex = TRUE
-)
-
-burden_effects_calcs <- policy_rounding_calcs(outcome = "burden")
-etable(
-  burden_effects_calcs$symm_results$all_notes,
-  burden_effects_calcs$symm_results$only_20notes,
-  burden_effects_calcs$asymm_results$all_notes,
-  burden_effects_calcs$asymm_results$only_20notes,
-  tex = FALSE
-)
-etable(
-  burden_effects_calcs$symm_results$all_notes,
-  burden_effects_calcs$symm_results$only_20notes,
-  burden_effects_calcs$asymm_results$all_notes,
-  burden_effects_calcs$asymm_results$only_20notes,
-  tex = TRUE
-)
