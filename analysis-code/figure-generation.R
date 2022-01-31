@@ -95,7 +95,7 @@ factor2numeric <- function(x) {
 #===============================================================================
 # insert the path to your datasets here
 directory <- stringr::str_remove(Sys.getenv("PWD"), "analysis-code")
-setwd(paste0(directory, "data"))
+setwd(directory)
 
 output_height <- 7
 output_width <- 12
@@ -234,7 +234,7 @@ cash_dist <- tran_df %>%
     bins = 105,
     bindwidth = 1,
     # bins = 75,
-    fill = "royalblue4"
+    fill = "#0e4768"
   ) +
   scale_y_continuous(
     "Density",
@@ -251,8 +251,8 @@ cash_dist <- tran_df %>%
   theme_bw() +
   theme(
     text = element_text(family = "serif"),
-    axis.text = element_text(size = 13, color = "black"),
-    axis.title = element_text(size = 14, color = "black"),
+    axis.text = element_text(size = 17, color = "black"),
+    axis.title = element_text(size = 18, color = "black"),
     panel.grid.minor = element_blank(),
     panel.grid.major.x = element_blank()
   )
@@ -260,25 +260,25 @@ print(cash_dist)
 ggplot2::ggsave(
   filename = "cash_dist_2015-2019.jpeg",
   device = "jpeg",
-  plot = last_plot(),
+  plot = cash_dist,
   height = output_height,
   width = output_width
 )
 
 #===============================================================================
 # The choice of policy has no effect on the outcome
-baseline_figures_df %>%
+baseline_burden_figure <- baseline_figures_df %>%
   dplyr::filter(which_policy == "Symmetric policy") %>%
   ggplot(
-    data = ., 
+    data = .,
     aes(
-      x = n_tokens, 
+      x = n_tokens,
       y = share
     )
   ) +
   geom_histogram(
     stat = "identity",
-    fill = "royalblue4",
+    fill = "#0e4768",
     width = 0.3,
     color = "white"
   ) +
@@ -294,7 +294,7 @@ baseline_figures_df %>%
     aes(label = round(share, 1)),
     nudge_y = 0.5,
     color = "black",
-    size = 5,
+    size = 7,
     family = "serif"
   ) +
   xlab(expression(italic(b ^ "*"))) +
@@ -303,16 +303,16 @@ baseline_figures_df %>%
   theme(
     text = element_text(family = "serif"),
     plot.title = element_text(size = 15, hjust = 0.50),
-    axis.text = element_text(size = 14, color = "black"),
-    strip.text = element_text(size = 14, color = "black"),
-    axis.title = element_text(size = 15, color = "black"),
+    axis.text = element_text(size = 16, color = "black"),
+    strip.text = element_text(size = 16, color = "black"),
+    axis.title = element_text(size = 17, color = "black"),
     panel.grid.minor = element_blank(),
     panel.grid.major.x = element_blank()
   )
 ggplot2::ggsave(
   filename = "baseline-burden_2015-2019.jpeg",
   device = "jpeg",
-  plot = last_plot(),
+  plot = baseline_burden_figure,
   height = output_height,
   width = output_width
 )
@@ -358,7 +358,7 @@ shares_figure_data %>%
   dplyr::select(share, n_tokens)
 
 # Plotting the results
-shares_figure_data %>%
+counter_shares_figure <- shares_figure_data %>%
   ggplot(
     data = .,
     aes(
@@ -388,21 +388,21 @@ shares_figure_data %>%
   scale_fill_manual(
     name = NULL,
     values = c(
-      "Without pennies (counterfactual)" = "skyblue1",
-      "With pennies (current)" = "royalblue4"
+      "Without pennies (counterfactual)" = "#b5c7d1",
+      "With pennies (current)" = "#0e4768"
     )
   ) +
   scale_color_manual(
     name = NULL,
     values = c(
-      "Without pennies (counterfactual)" = "skyblue1",
-      "With pennies (current)" = "royalblue4"
+      "Without pennies (counterfactual)" = "#b5c7d1",
+      "With pennies (current)" = "#0e4768"
     )
   ) +
   scale_alpha_manual(
     name = NULL,
     values = c(
-      "Without pennies (counterfactual)" = 1, 
+      "Without pennies (counterfactual)" = 1,
       "With pennies (current)" = 0
     )
   ) +
@@ -413,11 +413,11 @@ shares_figure_data %>%
     text = element_text(family = "serif"),
     legend.position = "bottom",
     plot.title = element_text(size = 15, hjust = 0.50),
-    axis.text = element_text(size = 14, color = "black"),    
-    axis.title = element_text(size = 15, color = "black"),
-    strip.text = element_text(size = 14, color = "black"),
-    legend.text = element_text(size = 14, color = "black"),
-    legend.title = element_text(size = 15, color = "black"),
+    axis.text = element_text(size = 16, color = "black"),
+    axis.title = element_text(size = 18, color = "black"),
+    strip.text = element_text(size = 16, color = "black"),
+    legend.text = element_text(size = 16, color = "black"),
+    legend.title = element_text(size = 16, color = "black"),
     panel.grid.minor = element_blank(),
     panel.grid.major.x = element_blank()
   ) +
@@ -425,7 +425,7 @@ shares_figure_data %>%
 ggplot2::ggsave(
   filename = "counterfactual-burden_2015-2019.jpeg",
   device = "jpeg",
-  plot = last_plot(),
+  plot = counter_shares_figure,
   height = output_height,
   width = output_width
 )
@@ -433,11 +433,12 @@ ggplot2::ggsave(
 #===============================================================================
 stylizedExercise_figure_1 <- stylized_exercise_1 %>%
   ggplot(data = ., aes(x = a, y = n_tokens)) +
-  geom_line(size = 1,
-            lty = 3,
-            color = "midnightblue") +
-  geom_point(size = 2,
-             color = "midnightblue") +
+  geom_line(
+    size = 1,
+    lty = 3,
+    color = "#0e4768"
+  ) +
+  geom_point(size = 2, color = "#0e4768") +
   scale_x_continuous(limits = c(4, 5),
                      breaks = seq(4, 5, 0.05)) +
   scale_y_continuous(limits = c(1, 6),
@@ -449,10 +450,10 @@ stylizedExercise_figure_1 <- stylized_exercise_1 %>%
   ggtitle("Economy with pennies (current)") +
   theme(
     text = element_text(family = "serif"),
-    plot.title = element_text(size = 15, hjust = 0.50),
-    axis.text = element_text(size = 14, color = "black"),
+    plot.title = element_text(size = 18, hjust = 0.50),
+    axis.text = element_text(size = 16, color = "black"),
     axis.title = element_text(
-      size = 15,
+      size = 17,
       color = "black",
       family = "serif"
     ),
@@ -462,19 +463,18 @@ print(stylizedExercise_figure_1)
 
 stylizedExercise_figure_1.counter <- stylized_exercise_2 %>%
   ggplot(
-    data = ., 
+    data = .,
     aes(
-      x = a, 
+      x = a,
       y = n_tokens
     )
   ) +
   geom_line(
     size = 1,
     lty = 3,
-    color = "midnightblue"
+    color = "#0e4768"
   ) +
-  geom_point(size = 2,
-             color = "midnightblue") +
+  geom_point(size = 2, color = "#0e4768") +
   scale_x_continuous(limits = c(4, 5),
                      breaks = seq(4, 5, 0.05)) +
   scale_y_continuous(limits = c(1, 6),
@@ -485,10 +485,10 @@ stylizedExercise_figure_1.counter <- stylized_exercise_2 %>%
   ylab("Optimal burden") +
   theme(
     text = element_text(family = "serif"),
-    plot.title = element_text(size = 15, hjust = 0.50),
-    axis.text = element_text(size = 14, color = "black"),
+    plot.title = element_text(size = 18, hjust = 0.50),
+    axis.text = element_text(size = 16, color = "black"),
     axis.title = element_text(
-      size = 15,
+      size = 17,
       color = "black",
       family = "serif"
     ),
@@ -548,7 +548,7 @@ deltaAlpha_hist_merch <- list(symmetric_pol_df, asymmetric_pol_df) %>%
               ggplot(data = ., aes(x = Change, y = Share * 100)) +
               geom_histogram(
                 stat = "identity",
-                fill = "firebrick",
+                fill = "#a01d23",
                 bins = 5,
                 width = 0.008,
                 color = "white"
@@ -565,16 +565,23 @@ deltaAlpha_hist_merch <- list(symmetric_pol_df, asymmetric_pol_df) %>%
                 breaks = seq(-.05, .05, .01)
               ) +
               xlab(expression(Delta^a)) +
-              ggtitle(p) +
+              ggtitle(
+                ifelse(
+                  test = p == "Retail store or online retailer",
+                  yes = "Retail store",
+                  no = p
+                )
+              ) +
               geom_text(aes(label = round(Share * 100, 2)),
                         nudge_y = 10,
+                        size = 5.5,
                         family = "serif") +
               theme_bw() +
               theme(
                 text = element_text(family = "serif"),
-                plot.title = element_text(hjust = 0.50),
-                axis.text = element_text(size = 13, color = "black"),
-                axis.title = element_text(size = 14, color = "black"),
+                plot.title = element_text(size = 18, hjust = 0.50),
+                axis.text = element_text(size = 16, color = "black"),
+                axis.title = element_text(size = 17, color = "black"),
                 panel.grid.minor = element_blank(),
                 panel.grid.major.x = element_blank()
               )
@@ -622,6 +629,108 @@ gridExtra::grid.arrange(
 dev.copy(
   jpeg,
   str_c("merch-price-effects-asymmetric_", Sys.Date(), ".jpeg"),
+  height = output_height + 2,
+  width = output_width,
+  units = "in",
+  res = output_res
+)
+dev.off()
+
+#===============================================================================
+penny_df <- readr::read_csv("penny-sq-df.csv") %>%
+  dplyr::mutate(
+    response = ifelse(
+      test = response == "I always leave pennies with cashier or tip jar, etc",
+      yes = "I always leave pennies with \ncashier or tip jar, etc",
+      no = response
+    ),
+    response = ifelse(
+      test = response == 
+      "Give pennies to charity box, take/leave penny, or tip jar",
+      yes = "Give pennies to charity box, \ntake/leave penny, or tip jar",
+      no = response
+    ),
+    response = ifelse(
+      test = response == "Put pennies in pocket, purse, or wallet",
+      yes = "Put pennies in pocket,\n purse, or wallet",
+      no = response
+    ),
+  )
+
+penny_sq_loops <- unique(penny_df$question)
+
+penny_sq_figures <- penny_sq_loops %>%
+  as.list() %>%
+  purrr::map(
+    .x = .,
+    .f = function(q) {
+      output <- penny_df %>%
+        dplyr::filter(question == q) %>%
+        dplyr::mutate(year = factor(x = year, levels = c("2020", "2019"))) %>%
+        ggplot(
+          data = .,
+          aes(
+            x = response,
+            y = share,
+            fill = year
+          )
+        ) +
+        geom_histogram(
+          stat = "identity",
+          position = position_dodge(0.5),
+          width = 0.5,
+          show.legend = ifelse(
+            test = q == penny_sq_loops[1],
+            yes = FALSE,
+            no = TRUE
+          )
+        ) +
+        geom_text(
+          aes(y = share + 2.5, label = share),
+          position = position_dodge(0.5),
+          size = 6,
+          color = "black",
+          family = "serif"
+        ) +
+        scale_y_continuous(
+          name = "Share of consumers",
+          limits = c(0, 83),
+          breaks = seq(0, 80, 20),
+          expand = c(0, 0)
+        ) +
+        scale_x_discrete(name = NULL) +
+        scale_fill_manual(
+          name = NULL,
+          values = c("#0e4678", "#f5892f"),
+          guide = guide_legend(reverse = TRUE)
+        ) +
+        theme_bw() +
+        coord_flip() +
+        facet_wrap(~ question) +
+        theme(
+          text = element_text(family = "serif"),
+          plot.title = element_text(size = 18, hjust = 0.50),
+          strip.text = element_text(size = 16, color = "black"),
+          legend.text = element_text(size = 16, color = "black"),
+          axis.text = element_text(size = 16, color = "black"),
+          axis.title = element_text(size = 17, color = "black"),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.y = element_blank(),
+          legend.position = "bottom",
+          legend.background = element_rect(color = "black")
+        )
+
+      return(output)
+    }
+  )
+gridExtra::grid.arrange(
+  penny_sq_figures[[1]],
+  penny_sq_figures[[2]],
+  ncol = 1
+)
+dev.copy(
+  jpeg,
+  "penny-sq.jpeg",
   height = output_height + 2,
   width = output_width,
   units = "in",
