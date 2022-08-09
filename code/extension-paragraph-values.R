@@ -86,6 +86,35 @@ print(
     )
 )
 
+# We are looking at the upper bound economy where merchants only round prices
+# up. Thus, these represent an upper bound on the price effects stemming from
+# currency elimination.
+inf_estimates <- seq_along(list(asymmetric_pol_df, ext_asymmetric_pol_df)) %>%
+    as.list() %>%
+    purrr::map(
+        .x = .,
+        .f = function(i) {
+            df <- list(asymmetric_pol_df, ext_asymmetric_pol_df)[[i]]
+
+            output <- df %>%
+                dplyr::filter(only_20note == "All coins and notes") %>%
+                dplyr::select(uasid, year, alpha_tilde, alpha) %>%
+                dplyr::group_by(uasid, year) %>%
+                dplyr::summarise_all(.funs = sum, na.rm = TRUE) %>%
+                dplyr::ungroup() %>%
+                dplyr::select(-uasid) %>%
+                dplyr::group_by(year) %>%
+                dplyr::summarise_all(.funs = mean, na.rm = TRUE) %>%
+                dplyr::mutate(pi = (alpha_tilde - alpha) / alpha * 100) %>%
+                dplyr::ungroup() %>%
+                dplyr::summarise(inflation = mean(pi))
+
+            return(output)
+        }
+    )
+names(inf_estimates) <- paste0(c("main", "secondary"), "_counterfactual")
+print(inf_estimates)
+
 # Now, we are dropping the original counterfactual values
 rm(symmetric_pol_df)
 rm(asymmetric_pol_df)
