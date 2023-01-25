@@ -25,8 +25,8 @@ rm(list = ls())
 
 # THESE SHOULD BE CONSIDERED BEFORE EVERY RUN.
 initial_run <- TRUE
-last_base_run <- "2022-12-17"
-last_counter_run <- "2023-01-02"
+last_base_run <- "2023-01-24"
+last_counter_run <- "2023-01-24"
 u_overline <- c("mean", "100") # Options: med, mean 60, 100
 
 #==============================================================================#
@@ -245,12 +245,15 @@ counterfactual_sim <- function(rounding_policy, amnts_index) {
     counterfactual_amnt_list <- as.list(counter_amnts)
     num_cores <- 6
 
+    denoms <- c(0.05, 0.10, 0.25, 0.50, 1, 5, 10, 20, 50, 100)
+    max_amnt <- max(unlist(counterfactual_amnt_list))
+
     cat("All coins and notes", "\n")
     optimal_tokens_baseline <- counterfactual_amnt_list %>%
       parallel::mclapply(
         X = .,
         FUN = calc_optimal_tokens,
-        using_tokens = c(0.05, 0.10, 0.25, 0.50, 1, 5, 10, 20, 50, 100),
+        using_tokens = denoms[which(denoms <= max_amnt)],
         only_20note = FALSE,
         mc.cores = num_cores,
         mc.preschedule = TRUE,
@@ -263,7 +266,7 @@ counterfactual_sim <- function(rounding_policy, amnts_index) {
       parallel::mclapply(
         X = .,
         FUN = calc_optimal_tokens,
-        using_tokens = c(0.05, 0.10, 0.25, 0.50, 1, 5, 10, 20, 50, 100),
+        using_tokens = denoms[which(denoms <= max_amnt)],
         only_20note = TRUE,
         mc.cores = num_cores,
         mc.preschedule = TRUE,
@@ -390,15 +393,3 @@ if (initial_run == TRUE) {
   }
 
 }
-
-# Loading the data back in
-load(
-  file = stringr::str_c(
-    "uniform-policy-results-amnt_mean_", last_counter_run, ".RData"
-  )
-)
-load(
-  file = stringr::str_c(
-    "uniform-policy-results-amnt_100_", last_counter_run, ".RData"
-  )
-)

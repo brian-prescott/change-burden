@@ -12,13 +12,43 @@
 # Cleaning out the environment before running the script
 rm(list = ls())
 
-last_solve_date <- "2022-12-17"
+last_solve_date <- "2023-01-24"
 
 #==============================================================================#
                                 # PACKAGES #
 #==============================================================================#
 library(tidyverse)
 library(xtable)
+
+#==============================================================================#
+                                # FUNCITON #
+#==============================================================================#
+counter_results <- function(df1, df2) {
+    output <- list(df1, df2) %>%
+        purrr::map(
+            .x = .,
+            .f = function(df) {
+                output <- df %>%
+                    dplyr::group_by(only_20note) %>%
+                    dplyr::summarize(
+                        counter_burden = round(
+                            x = mean(
+                                x = n_tokens_counter,
+                                na.rm = TRUE,
+                                digits = 4
+                            ),
+                            digits = 4
+                        )
+                    ) %>%
+                    data.frame()
+                return(output)
+            }
+        )
+    names(output) <- c("Symmetric", "Asymmetric")
+
+    print(output)
+
+}
 
 #==============================================================================#
                                 # PARAMETERS #
@@ -56,3 +86,23 @@ avg_burdens_df %>%
 avg_burdens_df %>%
     dplyr::filter(only_20note == "Only $20 note") %>%
     dplyr::mutate(change = (avg_burden - 4.96) / 4.96 * 100)
+
+# Now we are going to look at the counterfactual results
+# Loading the data back in
+load(
+  file = stringr::str_c(
+    "./uniform-policy-results-amnt_mean_", last_solve_date, ".RData"
+  )
+)
+cat("First, we will look at the results when bar{a} = $mean\n")
+counter_results(symmetric_pol_df, asymmetric_pol_df)
+rm(symmetric_pol_df, asymmetric_pol_df)
+
+cat("Now, we will look at the results when bar{a} = $100\n")
+load(
+  file = stringr::str_c(
+    "./uniform-policy-results-amnt_100_", last_solve_date, ".RData"
+  )
+)
+counter_results(symmetric_pol_df, asymmetric_pol_df)
+rm(symmetric_pol_df, asymmetric_pol_df)

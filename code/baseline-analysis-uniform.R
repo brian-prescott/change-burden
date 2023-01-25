@@ -157,14 +157,16 @@ optimal_tokens_list <- c(unif_bounds$median, unif_bounds$mean, 60, 100) %>%
         runif(n = n_draws, min = unif_bounds$min, max = .) %>%
         round(x = ., digits = 2)
 
+      denoms <- c(
+        0.01, 0.05, 0.10, 0.25, 0.50, # Coins
+        1, 5, 10, 20, 50, 100 # Notes
+      )
+
       optimal_tokens_baseline <- amnt_list %>%
         parallel::mclapply(
           X = .,
           FUN = calc_optimal_tokens,
-          using_tokens = c(
-            0.01, 0.05, 0.10, 0.25, 0.50,
-            1, 5, 10, 20, 50, 100
-          ),
+          using_tokens = denoms[which(denoms <= upper_bound)],
           only_20note = FALSE,
           mc.cores = num_cores,
           mc.preschedule = TRUE,
@@ -175,10 +177,7 @@ optimal_tokens_list <- c(unif_bounds$median, unif_bounds$mean, 60, 100) %>%
         parallel::mclapply(
           X = .,
           FUN = calc_optimal_tokens,
-          using_tokens = c(
-            0.01, 0.05, 0.10, 0.25, 0.50,
-            1, 5, 10, 20, 50, 100
-          ),
+          using_tokens = denoms[which(denoms <= upper_bound)],
           only_20note = TRUE,
           mc.cores = num_cores,
           mc.preschedule = TRUE,
